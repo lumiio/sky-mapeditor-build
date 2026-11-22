@@ -385,3 +385,29 @@ fragment float4 fogUpsampleFS(TIn in [[stage_in]], constant FU &u [[constant buf
   float w = max(fogW - lum * lum, 0.0);
   return float4(sc.xyz * (1.0 - w) + fogCol, 1.0);
 }
+
+// ---- Fxaa0.frag 原样（4 邻域亮度 + 方向搜索 + 边缘判定）----
+struct FXU { float4 params; };  // xy = viewport size
+fragment float4 fxaaFS(TIn in [[stage_in]], constant FXU &u [[constant buffer(1)]],
+                       texture2d<float> tex [[texture(0)]], sampler smp [[sampler(0)]]) {
+  float2 invTex = 1.0 / u.params.xy;
+  float4 c = tex.sample(smp, in.uv);
+  float3 w = float3(0.25, 0.6, 0.15);
+  float lA = dot(tex.sample(smp, in.uv, level(0), int2(-1, -1)).xyz, w);
+  float lB = dot(tex.sample(smp, in.uv, level(0), int2(1, -1)).xyz, w);
+  float lC = dot(tex.sample(smp, in.uv, level(0), int2(-1, 1)).xyz, w);
+  float lD = dot(tex.sample(smp, in.uv, level(0), int2(1, 1)).xyz, w);
+  float lM = dot(c.xyz, w);
+  float mn = min(min(lM, lA), min(min(lB, lC), lD));
+  float mx = max(max(lM, lA), max(max(lB, lC), lD));
+  float2 dir;
+  dir.x = (lC + lD) - (lA + lB);
+  dir.y = (lA + lC) - (lB + lD);
+  dir = (min(float2(8.0), max(float2(-8.0), dir * (1.0 / ((min(abs(dir.x), abs(dir.y))
+        + max(((lA + lB) + (lC + lD)) * 0.02083333, 0.0078125)))))) * invTex;
+  float3 s13 = 0.5 * (tex.sample(smp, in.uv + dir * -0.1666667).xyz + tex.sample(smp, in.uv + dir * 0.1666667).xyz);
+  float3 s16 = (s13 * 0.5) + (0.25 * (tex.sample(smp, in.uv + dir * -0.5).xyz + tex.sample(smp, in.uv + dir * 0.5).xyz));
+  float l16 = dot(s16, w);
+  float3 col = (l16 < mn || l16 > mx) ? s13 : s16;
+  return float4(col, 0.5);
+}

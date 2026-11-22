@@ -67,6 +67,8 @@ final class MetalRenderer {
     private let queue: MTLCommandQueue
     private var meshPipe: MTLRenderPipelineState?
     private var tonemapPipe: MTLRenderPipelineState?
+    private var fxaaPipe: MTLRenderPipelineState?
+    private var ldrTex: MTLTexture?
     private var bloomTex: MTLTexture?
     private var blackTex: MTLTexture?
     private var fogPipe: MTLRenderPipelineState?
@@ -199,6 +201,13 @@ final class MetalRenderer {
         urpd.colorAttachments[0].pixelFormat = .rgba16Float
         fogUpsamplePipe = try? dev.makeRenderPipelineState(descriptor: urpd)
         Boot.log("雾管线 \(fogPipe != nil && fogUpsamplePipe != nil ? "ok" : "失败")")
+
+        let xrpd = MTLRenderPipelineDescriptor()
+        xrpd.vertexFunction = library.makeFunction(name: "tonemapVS")
+        xrpd.fragmentFunction = library.makeFunction(name: "fxaaFS")
+        xrpd.colorAttachments[0].pixelFormat = .bgra8Unorm
+        fxaaPipe = try? dev.makeRenderPipelineState(descriptor: xrpd)
+        Boot.log("fxaa 管线 \(fxaaPipe != nil ? "ok" : "失败")")
 
         Boot.log("开始建 mesh 管线 (stride=\(vd.layouts[0].stride))")
         do {
@@ -466,6 +475,9 @@ final class MetalRenderer {
         fd.usage = [.renderTarget, .shaderRead]
         fogTex = device.makeTexture(descriptor: fd)
         fogOut = device.makeTexture(descriptor: fd)
+        let ld = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        ld.usage = [.renderTarget, .shaderRead]
+        ldrTex = device.makeTexture(descriptor: ld)
         let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: w, height: h, mipmapped: false)
         dd.usage = [.renderTarget, .shaderRead]
         depthTex = device.makeTexture(descriptor: dd)
@@ -669,7 +681,7 @@ final class MetalRenderer {
         // Pass 5：Tonemap（原版 Tonemap0.frag：HDR 反解 + bloom + 曝光 + 暗角 + 输出曲线）
         if let tonemapPipe {
             let tp = MTLRenderPassDescriptor()
-            tp.colorAttachments[0].texture = drawable.texture
+            tp.colorAttachments[0].texture = ldrTex
             tp.colorAttachments[0].loadAction = .dontCare
             tp.colorAttachments[0].storeAction = .store
             if let tenc = cb.makeRenderCommandEncoder(descriptor: tp) {
@@ -686,6 +698,23 @@ final class MetalRenderer {
                 tenc.setFragmentSamplerState(clampSampler, index: 0)
                 tenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                 tenc.endEncoding()
+            }
+            // Pass 6：Fxaa0.frag
+            if let fxaaPipe, let ldrTex {
+                let xp = MTLRenderPassDescriptor()
+                xp.colorAttachments[0].texture = drawable.texture
+                xp.colorAttachments[0].loadAction = .dontCare
+                xp.colorAttachments[0].storeAction = .store
+                if let xenc = cb.makeRenderCommandEncoder(descriptor: xp) {
+                    struct FX { var params: SIMD4<Float> }
+                    var fx = FX(params: SIMD4<Float>(Float(w), Float(h), 0, 0))
+                    xenc.setRenderPipelineState(fxaaPipe)
+                    xenc.setFragmentBytes(&fx, length: MemoryLayout<FX>.stride, index: 1)
+                    xenc.setFragmentTexture(ldrTex, index: 0)
+                    xenc.setFragmentSamplerState(clampSampler, index: 0)
+                    xenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                    xenc.endEncoding()
+                }
             }
         }
         cb.present(drawable)
