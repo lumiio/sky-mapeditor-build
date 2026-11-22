@@ -403,8 +403,8 @@ fragment float4 fxaaFS(TIn in [[stage_in]], constant FXU &u [[constant buffer(1)
   float2 dir;
   dir.x = (lC + lD) - (lA + lB);
   dir.y = (lA + lC) - (lB + lD);
-  dir = (min(float2(8.0), max(float2(-8.0), dir * (1.0 / ((min(abs(dir.x), abs(dir.y))
-        + max(((lA + lB) + (lC + lD)) * 0.02083333, 0.0078125)))))) * invTex;
+  float denom = min(abs(dir.x), abs(dir.y)) + max(((lA + lB) + (lC + lD)) * 0.02083333, 0.0078125);
+  dir = min(float2(8.0), max(float2(-8.0), dir * (1.0 / denom))) * invTex;
   float3 s13 = 0.5 * (tex.sample(smp, in.uv + dir * -0.1666667).xyz + tex.sample(smp, in.uv + dir * 0.1666667).xyz);
   float3 s16 = (s13 * 0.5) + (0.25 * (tex.sample(smp, in.uv + dir * -0.5).xyz + tex.sample(smp, in.uv + dir * 0.5).xyz));
   float l16 = dot(s16, w);
