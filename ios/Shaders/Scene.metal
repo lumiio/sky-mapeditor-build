@@ -301,3 +301,83 @@ fragment float4 tonemapFS(TIn in [[stage_in]], constant TUni &u [[constant buffe
   float3 outv = comp / scalar;
   return float4(outv * outv, 0.0);
 }
+
+// ---- FogVolume0.frag 原样：整屏把深度 × 强度写进雾纹理（背面写负值）----
+struct FVUni { float4 params; };   // x = u_intensity, y = near, z = far
+vertex TIn fogVolumeVS(uint vid [[vertex_id]]) { return tonemapVS(vid); }
+fragment float4 fogVolumeFS(TIn in [[stage_in]], constant FVUni &u [[constant buffer(1)]],
+                            depth2d<float> depthTex [[texture(1)]], sampler smp [[sampler(0)]]) {
+  float d = depthTex.sample(smp, in.uv);
+  // 原版取的是 1/gl_FragCoord.w（视距），这里用同一含义：把 NDC 深度反解成世界距离
+  float near = u.params.y, far = u.params.z;
+  float dist = (2.0 * near * far) / (far + near - d * (far - near));
+  float Do = min(256000.0, dist);
+  return float4(Do * u.params.x, 0, 0, 0);
+}
+
+// ---- FogUpsample0.frag 的雾合成核心（clouds/alpha/beacon 分支按原条件关闭）----
+struct FU {
+  float4 eyePos; float4 sunDir; float4 sunColor; float4 sunSize;
+  float4 fogDensityHeightDist; float4 atmosphereDensity; float4 atmosphereSample;
+  float4 avgSkyboxColor; float4 atmSunColor; float4 earthPosRad; float4 viewportSize;
+};
+fragment float4 fogUpsampleFS(TIn in [[stage_in]], constant FU &u [[constant buffer(1)]],
+                              texture2d<float> scene [[texture(0)]],
+                              texture2d<float> fogTex [[texture(2)]],
+                              texture2d<float> atmoTex [[texture(3)]],
+                              sampler smp [[sampler(0)]]) {
+  float2 uv = in.uv;
+  float4 sc = scene.sample(smp, uv);
+  float tmpvar_15 = fogTex.sample(smp, uv).x * 1000.0;   // 原版: fogTex.x * 1000
+
+  // 视线方向（view space）
+  float2 ndc = uv * 2.0 - 1.0;
+  float tanHalf = tan(25.0 * 3.14159265 / 180.0);
+  float aspect = u.viewportSize.x / max(u.viewportSize.y, 1.0);
+  float3 pointer = normalize(float3(ndc.x * tanHalf * aspect, -ndc.y * tanHalf, -1.0));
+
+  float EdotL = dot(normalize(pointer), -u.sunDir.xyz);
+  float3 pos = u.eyePos.xyz + pointer * tmpvar_15;
+  if (tmpvar_15 >= 256000.0) {
+    float3 dir = normalize(pos - u.eyePos.xyz);
+    float3 toC = u.earthPosRad.xyz - u.eyePos.xyz;
+    float len = length(toC);
+    float3 w;
+    w.xz = (u.eyePos.xz + 25000.0 * dir.xz);
+    float3 x38 = (u.eyePos.xyz + max(15000.0, sqrt(max(0.0, len * len - u.earthPosRad.w * u.earthPosRad.w))) * dir) - u.earthPosRad.xyz;
+    w.y = sqrt(dot(x38, x38)) - u.earthPosRad.w;
+    pos = w;
+  } else {
+    float3 c = pos - u.earthPosRad.xyz;
+    pos.y = max(0.0, sqrt(dot(c, c)) - u.earthPosRad.w);
+  }
+
+  float3 diff = pos - u.eyePos.xyz;
+  diff.y = sign(diff.y) * max(0.1, abs(diff.y));
+  float2 r2 = float2(1.0, u.fogDensityHeightDist.y);
+  float2 d2 = 0.000901684 / r2;
+  float2 a2 = float2(u.atmosphereDensity.x, u.fogDensityHeightDist.x);
+  float2 k2 = (0.000832548 * a2) / d2;
+  float4 v4 = float4(d2 * u.eyePos.y, d2 * (diff.y + u.eyePos.y));
+  float4 e4 = exp2(-v4);
+  float2 q2 = float2(e4.x - e4.z, e4.y - e4.w);
+  float2 sc2 = min(float2(64000.0), ((length(diff) / diff.y) * k2) * q2);
+
+  float EdotL2 = EdotL * EdotL;
+  float depthContribution = tmpvar_15 / 256000.0;
+  float phase = (EdotL2 * 0.2) + (EdotL * 0.4) + 0.4;
+  float t62 = 1.0 - exp2(-5.0 * sc2.x);
+  float t66 = 1.0 - exp2(-20.0 * sc2.y);
+  float3 atm = atmoTex.sample(smp, uv).xyz;
+  float sunGlow = max((EdotL2 * EdotL) - u.sunSize.z, 0.0);
+  float halo = 1.0 / (200.0 + (2000.0 * u.sunSize.z));
+  float3 cA = ((u.atmSunColor.xyz * atm) * (sc2.x * (1.0 + EdotL2))) * (phase * t62);
+  float3 cB = (u.avgSkyboxColor.xyz + u.sunColor.xyz * sunGlow)
+            * mix(((3333.3 * sc2.y) * (halo / (halo - (EdotL - 1.0)))) * depthContribution, phase, t66);
+  float3 fogCol = mix(cA, cB, t66) * 0.5;
+  float fogW = (t62 * (1.0 - t66)) + t66;
+
+  float lum = dot(float3(0.2126, 0.7152, 0.0722), sc.xyz) * 0.8;
+  float w = max(fogW - lum * lum, 0.0);
+  return float4(sc.xyz * (1.0 - w) + fogCol, 1.0);
+}

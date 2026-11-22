@@ -66,6 +66,10 @@ final class MetalRenderer {
     private var tonemapPipe: MTLRenderPipelineState?
     private var bloomTex: MTLTexture?
     private var blackTex: MTLTexture?
+    private var fogPipe: MTLRenderPipelineState?
+    private var fogUpsamplePipe: MTLRenderPipelineState?
+    private var fogTex: MTLTexture?
+    private var fogOut: MTLTexture?
     private var waterPipe: MTLRenderPipelineState?
     private var depthState: MTLDepthStencilState?
     private var waterDepthState: MTLDepthStencilState?
@@ -173,6 +177,18 @@ final class MetalRenderer {
         trpd.colorAttachments[0].pixelFormat = .bgra8Unorm
         Boot.log("开始建 tonemap 管线")
         tonemapPipe = try? dev.makeRenderPipelineState(descriptor: trpd)
+
+        let frpd = MTLRenderPipelineDescriptor()
+        frpd.vertexFunction = library.makeFunction(name: "fogVolumeVS")
+        frpd.fragmentFunction = library.makeFunction(name: "fogVolumeFS")
+        frpd.colorAttachments[0].pixelFormat = .rgba16Float
+        fogPipe = try? dev.makeRenderPipelineState(descriptor: frpd)
+        let urpd = MTLRenderPipelineDescriptor()
+        urpd.vertexFunction = library.makeFunction(name: "tonemapVS")
+        urpd.fragmentFunction = library.makeFunction(name: "fogUpsampleFS")
+        urpd.colorAttachments[0].pixelFormat = .rgba16Float
+        fogUpsamplePipe = try? dev.makeRenderPipelineState(descriptor: urpd)
+        Boot.log("雾管线 \(fogPipe != nil && fogUpsamplePipe != nil ? "ok" : "失败")")
 
         Boot.log("开始建 mesh 管线 (stride=\(vd.layouts[0].stride))")
         do {
@@ -425,8 +441,12 @@ final class MetalRenderer {
         d.usage = [.renderTarget, .shaderRead]
         sceneTex = device.makeTexture(descriptor: d)
         sceneTex2 = device.makeTexture(descriptor: d)
+        let fd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
+        fd.usage = [.renderTarget, .shaderRead]
+        fogTex = device.makeTexture(descriptor: fd)
+        fogOut = device.makeTexture(descriptor: fd)
         let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: w, height: h, mipmapped: false)
-        dd.usage = [.renderTarget]
+        dd.usage = [.renderTarget, .shaderRead]
         depthTex = device.makeTexture(descriptor: dd)
     }
 
@@ -446,7 +466,8 @@ final class MetalRenderer {
         let up = SIMD3<Float>(0, 1, 0)
         let right = simd_normalize(simd_cross(fwd, up))
         let camUp = simd_cross(right, fwd)
-        let proj = perspective(50.0 * Float.pi / 180, Float(w) / Float(h), max(dist * 0.01, 0.05), dist * 20)
+        let nearD = max(dist * 0.01, 0.05), farD = dist * 20
+        let proj = perspective(50.0 * Float.pi / 180, Float(w) / Float(h), nearD, farD)
         let viewM = lookAt(eye, center, camUp)
         let vp = proj * viewM
         updateClusters(vp, w, h)
@@ -570,7 +591,52 @@ final class MetalRenderer {
             wenc.endEncoding()
         }
 
-        // Pass 3：Tonemap（原版 Tonemap0.frag：HDR 反解 + bloom + 曝光 + 暗角 + 输出曲线）
+        // Pass 3：FogVolume → Pass 4：FogUpsample
+        if let fogPipe, let fogUpsamplePipe, let fogTex, let fogOut {
+            let fp = MTLRenderPassDescriptor()
+            fp.colorAttachments[0].texture = fogTex
+            fp.colorAttachments[0].loadAction = .dontCare
+            fp.colorAttachments[0].storeAction = .store
+            if let fenc = cb.makeRenderCommandEncoder(descriptor: fp) {
+                struct FV { var params: SIMD4<Float> }
+                var fv = FV(params: SIMD4<Float>(envNum("fogVolumeIntensity", 0), nearD, farD, 0))
+                fenc.setRenderPipelineState(fogPipe)
+                fenc.setFragmentBytes(&fv, length: MemoryLayout<FV>.stride, index: 1)
+                fenc.setFragmentTexture(depthTex, index: 1)
+                fenc.setFragmentSamplerState(clampSampler, index: 0)
+                fenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                fenc.endEncoding()
+            }
+            let up = MTLRenderPassDescriptor()
+            up.colorAttachments[0].texture = fogOut
+            up.colorAttachments[0].loadAction = .dontCare
+            up.colorAttachments[0].storeAction = .store
+            if let uenc = cb.makeRenderCommandEncoder(descriptor: up) {
+                struct FU { var eyePos: SIMD4<Float>; var sunDir: SIMD4<Float>; var sunColor: SIMD4<Float>; var sunSize: SIMD4<Float>
+                            var fogDH: SIMD4<Float>; var atmDen: SIMD4<Float>; var atmSample: SIMD4<Float>
+                            var avgSkybox: SIMD4<Float>; var atmSun: SIMD4<Float>; var earth: SIMD4<Float>; var vp: SIMD4<Float> }
+                var fu = FU(eyePos: SIMD4<Float>(eye, 1), sunDir: SIMD4<Float>(sunDir, 0),
+                            sunColor: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
+                            sunSize: SIMD4<Float>(envNum("sunSize", 0), 0, envNum("sunSize", 0), 0),
+                            fogDH: SIMD4<Float>(envNum("fogDensity", 1), envNum("fogHeight", 0.3), 0, 0),
+                            atmDen: SIMD4<Float>(26.0, 0, 0, 0),
+                            atmSample: SIMD4<Float>(1, 0, 0, 0),
+                            avgSkybox: envColor("tintTop", SIMD3<Float>(0.02, 0.05, 0.1)),
+                            atmSun: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
+                            earth: SIMD4<Float>(0, -50000, 0, 50000),
+                            vp: SIMD4<Float>(Float(w), Float(h), 1, 0))
+                uenc.setRenderPipelineState(fogUpsamplePipe)
+                uenc.setFragmentBytes(&fu, length: MemoryLayout<FU>.stride, index: 1)
+                uenc.setFragmentTexture(sceneTex2, index: 0)
+                uenc.setFragmentTexture(fogTex, index: 2)
+                uenc.setFragmentTexture(fallbackTex, index: 3)
+                uenc.setFragmentSamplerState(clampSampler, index: 0)
+                uenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                uenc.endEncoding()
+            }
+        }
+
+        // Pass 5：Tonemap（原版 Tonemap0.frag：HDR 反解 + bloom + 曝光 + 暗角 + 输出曲线）
         if let tonemapPipe {
             let tp = MTLRenderPassDescriptor()
             tp.colorAttachments[0].texture = drawable.texture
@@ -585,7 +651,7 @@ final class MetalRenderer {
                               exposure: SIMD4<Float>(envNum("exposure", 1), 0, 0, 0))
                 tenc.setRenderPipelineState(tonemapPipe)
                 tenc.setFragmentBytes(&tu, length: MemoryLayout<TUni>.stride, index: 1)
-                tenc.setFragmentTexture(sceneTex2, index: 0)
+                tenc.setFragmentTexture((fogPipe != nil && fogOut != nil) ? fogOut! : sceneTex2, index: 0)
                 tenc.setFragmentTexture(blackTex ?? fallbackTex, index: 1)
                 tenc.setFragmentSamplerState(clampSampler, index: 0)
                 tenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
