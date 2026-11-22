@@ -201,7 +201,7 @@ fragment float4 fs(VOut in [[stage_in]], constant U &u [[buffer(1)]],
   float fit = (t148.x * min(t148.y, exp2(-9.28 * max(0.0, dot(Namb, V)))) + t148.z);
   float3 subsurf = ((5.0 * color15) * pow(max(0.0, dot(-V, Ldir)), 8.0)) * max(0.0, dot(-N, Ldir));
   float3 probeAmbR = probe.sample(lodsmp, N, level(5.0)).rgb / max(in.probeAmb, float3(1e-4));
-  float3 probeSpecR = probe.sample(lodsmp, R, level(5.0) * sqrt(rough)).rgb / max(in.probeSpec, float3(1e-4));
+  float3 probeSpecR = probe.sample(lodsmp, R, level(5.0 * sqrt(rough))).rgb / max(in.probeSpec, float3(1e-4));
   float3 refl = probeSpecR * clamp((fit + (specColor * (t148.w - fit))), 0.0, 1.0);
   float3 ambSpec = mix(refl, min(float3(100.0), specGGX(N, V, ambDir, min(1.0, rough + 0.2 * (1.0 - ambDirLen)), specColor)), ambDirLen);
   float3 ambTerm = ((probeAmbR * color15) * (1.0 - vc.y)) + mix(ambSpec, subsurf, tmpvar_27);
