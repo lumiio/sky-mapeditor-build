@@ -127,8 +127,8 @@
    "sharp": 0.35
   }
  ],
- "vertices": 23547,
- "indices": 71211,
+ "vertices": 23427,
+ "indices": 70863,
  "stride": 72,
  "layout": {
   "pos": 0,
@@ -141,12 +141,12 @@
   "light2": 68
  },
  "bounds": [
-  -75,
-  -20.149999618530273,
-  -75,
-  75,
+  -6.5445128019868495,
+  -4.557676613330841,
+  0.263234507192072,
+  20.055268535148283,
   2.431475728750229,
-  75
+  29.73208687918138
  ],
  "focus": [
   -6.5445128019868495,
@@ -275,35 +275,6 @@
   },
   {
    "start": 4791,
-   "count": 312,
-   "name": "DCylinderCheap",
-   "material": 18,
-   "min": [
-    -5.444340364185038,
-    -0.26114100590348244,
-    2.1368887368128426
-   ],
-   "max": [
-    -4.838584836044042,
-    -0.1497913122588035,
-    2.7470933873438597
-   ],
-   "color": [
-    0.5,
-    0.5,
-    0.5,
-    1
-   ],
-   "texture": null,
-   "texture2": null,
-   "uvScale": 1,
-   "normTex": null,
-   "lightTex": null,
-   "normScale": 1,
-   "selfLit": null
-  },
-  {
-   "start": 5103,
    "count": 7308,
    "name": "CandleSpaceStatue_01",
    "material": 27,
@@ -332,7 +303,7 @@
    "selfLit": null
   },
   {
-   "start": 12411,
+   "start": 12099,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -361,7 +332,7 @@
    "selfLit": null
   },
   {
-   "start": 13317,
+   "start": 13005,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -390,7 +361,7 @@
    "selfLit": null
   },
   {
-   "start": 14367,
+   "start": 14055,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -419,7 +390,7 @@
    "selfLit": null
   },
   {
-   "start": 15417,
+   "start": 15105,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -448,7 +419,7 @@
    "selfLit": null
   },
   {
-   "start": 16467,
+   "start": 16155,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -477,7 +448,7 @@
    "selfLit": null
   },
   {
-   "start": 17373,
+   "start": 17061,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -506,7 +477,7 @@
    "selfLit": null
   },
   {
-   "start": 18423,
+   "start": 18111,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -535,7 +506,7 @@
    "selfLit": null
   },
   {
-   "start": 20319,
+   "start": 20007,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -564,7 +535,7 @@
    "selfLit": null
   },
   {
-   "start": 21225,
+   "start": 20913,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -593,7 +564,7 @@
    "selfLit": null
   },
   {
-   "start": 23121,
+   "start": 22809,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -622,7 +593,7 @@
    "selfLit": null
   },
   {
-   "start": 24171,
+   "start": 23859,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -651,7 +622,7 @@
    "selfLit": null
   },
   {
-   "start": 25077,
+   "start": 24765,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -680,7 +651,7 @@
    "selfLit": null
   },
   {
-   "start": 25983,
+   "start": 25671,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -709,7 +680,7 @@
    "selfLit": null
   },
   {
-   "start": 27033,
+   "start": 26721,
    "count": 54,
    "name": "CandleSpaceCandlePlatformCham",
    "material": 16,
@@ -738,7 +709,7 @@
    "selfLit": null
   },
   {
-   "start": 27087,
+   "start": 26775,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -767,7 +738,7 @@
    "selfLit": null
   },
   {
-   "start": 28137,
+   "start": 27825,
    "count": 1698,
    "name": "CandleSpaceStatuePlatform_01",
    "material": 16,
@@ -796,7 +767,7 @@
    "selfLit": null
   },
   {
-   "start": 29835,
+   "start": 29523,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -825,7 +796,7 @@
    "selfLit": null
   },
   {
-   "start": 31731,
+   "start": 31419,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -854,7 +825,7 @@
    "selfLit": null
   },
   {
-   "start": 33201,
+   "start": 32889,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -883,7 +854,7 @@
    "selfLit": null
   },
   {
-   "start": 34671,
+   "start": 34359,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -912,7 +883,7 @@
    "selfLit": null
   },
   {
-   "start": 36141,
+   "start": 35829,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -941,7 +912,7 @@
    "selfLit": null
   },
   {
-   "start": 37611,
+   "start": 37299,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -970,7 +941,7 @@
    "selfLit": null
   },
   {
-   "start": 39081,
+   "start": 38769,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -999,7 +970,7 @@
    "selfLit": null
   },
   {
-   "start": 40551,
+   "start": 40239,
    "count": 1200,
    "name": "TutorialRocks_01",
    "material": 34,
@@ -1028,7 +999,7 @@
    "selfLit": null
   },
   {
-   "start": 41751,
+   "start": 41439,
    "count": 1200,
    "name": "TutorialRocks_01",
    "material": 34,
@@ -1057,7 +1028,7 @@
    "selfLit": null
   },
   {
-   "start": 42951,
+   "start": 42639,
    "count": 3648,
    "name": "FriendshipStatue_03",
    "material": 16,
@@ -1086,7 +1057,7 @@
    "selfLit": null
   },
   {
-   "start": 46599,
+   "start": 46287,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1115,7 +1086,7 @@
    "selfLit": null
   },
   {
-   "start": 48495,
+   "start": 48183,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -1144,7 +1115,7 @@
    "selfLit": null
   },
   {
-   "start": 49401,
+   "start": 49089,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1173,7 +1144,7 @@
    "selfLit": null
   },
   {
-   "start": 51297,
+   "start": 50985,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1202,7 +1173,7 @@
    "selfLit": null
   },
   {
-   "start": 52347,
+   "start": 52035,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1231,7 +1202,7 @@
    "selfLit": null
   },
   {
-   "start": 54243,
+   "start": 53931,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1260,7 +1231,7 @@
    "selfLit": null
   },
   {
-   "start": 56139,
+   "start": 55827,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1289,7 +1260,7 @@
    "selfLit": null
   },
   {
-   "start": 57189,
+   "start": 56877,
    "count": 5226,
    "name": "FriendshipStatue_01",
    "material": 16,
@@ -1318,7 +1289,7 @@
    "selfLit": null
   },
   {
-   "start": 62415,
+   "start": 62103,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1347,36 +1318,7 @@
    "selfLit": null
   },
   {
-   "start": 64311,
-   "count": 36,
-   "name": "Cube",
-   "material": 2,
-   "min": [
-    -75,
-    -20.149999618530273,
-    -75
-   ],
-   "max": [
-    75,
-    -0.14999961853027344,
-    75
-   ],
-   "color": [
-    0.5,
-    0.5,
-    0.5,
-    1
-   ],
-   "texture": null,
-   "texture2": null,
-   "uvScale": 1,
-   "normTex": null,
-   "lightTex": null,
-   "normScale": 1,
-   "selfLit": null
-  },
-  {
-   "start": 64347,
+   "start": 63999,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -1405,7 +1347,7 @@
    "selfLit": null
   },
   {
-   "start": 65253,
+   "start": 64905,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -1434,7 +1376,7 @@
    "selfLit": null
   },
   {
-   "start": 66159,
+   "start": 65811,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1463,7 +1405,7 @@
    "selfLit": null
   },
   {
-   "start": 67209,
+   "start": 66861,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1492,7 +1434,7 @@
    "selfLit": null
   },
   {
-   "start": 68259,
+   "start": 67911,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1521,7 +1463,7 @@
    "selfLit": null
   },
   {
-   "start": 69309,
+   "start": 68961,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1550,7 +1492,7 @@
    "selfLit": null
   },
   {
-   "start": 71205,
+   "start": 70857,
    "count": 6,
    "name": "Plane",
    "material": 18,
