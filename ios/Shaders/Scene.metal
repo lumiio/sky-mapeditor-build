@@ -105,8 +105,8 @@ fragment float4 fs(VOut in [[stage_in]], constant U &u [[buffer(1)]],
   float2 nUv = in.uv01.xy * params.y;
   float4 nSample = normTex.sample(smp, nUv);
   float3 p = -in.eye;
-  float3 dx = dFdx(p), dy = dFdy(p);
-  float2 du = dFdx(nUv), dv = dFdy(nUv);
+  float3 dx = dfdx(p), dy = dfdy(p);
+  float2 du = dfdx(nUv), dv = dfdy(nUv);
   float3 s1 = (dy.yzx * in.nrm.zxy) - (dy.zxy * in.nrm.yzx);
   float3 s2 = (in.nrm.yzx * dx.zxy) - (in.nrm.zxy * dx.yzx);
   float3 t1 = (s1 * du.x) + (s2 * dv.x);
@@ -116,9 +116,9 @@ fragment float4 fs(VOut in [[stage_in]], constant U &u [[buffer(1)]],
   tbn[0] = t1 * invLen;
   tbn[1] = t2 * invLen;
   tbn[2] = in.nrm;
-  float3 nxy = (nSample.xy * 2.007874) - 1.007874;
+  float2 nxy = (nSample.xy * 2.007874) - 1.007874;
   float nz = sqrt(max(1.0 - dot(nxy, nxy), 0.0001));
-  float3 N = normalize(tbn * float3(nxy, nz));
+  float3 N = normalize(tbn * float3(nxy.x, nxy.y, nz));
 
   float tmpvar_35 = nSample.z;
   float tmpvar_34 = nSample.w;
@@ -140,7 +140,7 @@ fragment float4 fs(VOut in [[stage_in]], constant U &u [[buffer(1)]],
   float3 V = normalize(in.eye);
   float3 R = -V - 2.0 * dot(N, -V) * N;
   float rough = max(max(0.03, vc.x * tmpvar_34),
-                    pow(clamp(max(dot(dFdx(in.nrm), dFdx(in.nrm)), dot(dFdy(in.nrm), dFdy(in.nrm))), 0.0, 1.0), 0.333));
+                    pow(clamp(max(dot(dfdx(in.nrm), dfdx(in.nrm)), dot(dfdy(in.nrm), dfdy(in.nrm))), 0.0, 1.0), 0.333));
   float3 specColor = mix((baseColor * 0.015) + float3(0.035), baseColor, vc.y);
 
   // ---- 光簇：点光 + 球体遮挡（原版 lightCounts 那一段）----
