@@ -304,7 +304,13 @@ fragment float4 tonemapFS(TIn in [[stage_in]], constant TUni &u [[constant buffe
 
 // ---- FogVolume0.frag 原样：整屏把深度 × 强度写进雾纹理（背面写负值）----
 struct FVUni { float4 params; };   // x = u_intensity, y = near, z = far
-vertex TIn fogVolumeVS(uint vid [[vertex_id]]) { return tonemapVS(vid); }
+vertex TIn fogVolumeVS(uint vid [[vertex_id]]) {
+  TIn o;
+  float2 p[3] = { float2(-1.0, -3.0), float2(-1.0, 1.0), float2(3.0, 1.0) };
+  o.pos = float4(p[vid], 0.0, 1.0);
+  o.uv = float2((p[vid].x + 1.0) * 0.5, (1.0 - p[vid].y) * 0.5);
+  return o;
+}
 fragment float4 fogVolumeFS(TIn in [[stage_in]], constant FVUni &u [[constant buffer(1)]],
                             depth2d<float> depthTex [[texture(1)]], sampler smp [[sampler(0)]]) {
   float d = depthTex.sample(smp, in.uv);
