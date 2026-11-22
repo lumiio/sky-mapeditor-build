@@ -385,7 +385,7 @@ final class MetalRenderer {
                 }
             }
             tex.replace(region: MTLRegionMake2D(0, 0, n, n), slice: face, mipmapLevel: 0,
-                        withBytes: px, bytesPerRow: n * 8)
+                        withBytes: px, bytesPerRow: n * 8, bytesPerImage: n * n * 8)
         }
         if let cb = queue.makeCommandBuffer(), let blit = cb.makeBlitCommandEncoder() {
             blit.generateMipmaps(for: tex)
