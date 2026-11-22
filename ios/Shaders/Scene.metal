@@ -216,7 +216,8 @@ fragment float4 fs(VOut in [[stage_in]], constant U &u [[buffer(1)]],
   selfLitColor = selfLitColor * (1.0 + selfLit.z);
   finalColor = finalColor + selfLitColor;
 
-  return float4(finalColor, 1.0);
+  // 原版把 HDR 存成 c/(c+1)，Tonemap0.frag 里再 1/ldr-1 反解回来
+  return float4(finalColor / (finalColor + 1.0), 1.0);
 }
 
 struct WU {
@@ -268,7 +269,35 @@ fragment float4 waterFS(WVOut in [[stage_in]], constant WU &u [[buffer(1)]],
     float ca = causticTex.sample(smp, in.uv23.xy).z;
     body = body * clamp(((ca * ca * 2.0 - 0.1) * 0.5) + 1.0, 0.55, 1.45) * 0.55;
     float3 col = mix(body, refl + spec, fres);
-    col = col / (col + 0.55);
-    col = pow(max(col, 0.0), float3(0.4545));
-    return float4(col, 1);
+    return float4(col / (col + 1.0), 1.0);
+}
+
+// ---- Tonemap0.frag 原样搬（HDR 反解 + bloom 混合 + 曝光 + 暗角 + 输出曲线）----
+struct TIn { float4 pos [[position]]; float2 uv; };
+struct TUni { float4 bloomTint; float4 bloomParams; float4 viewportSize; float4 exposure; };
+
+vertex TIn tonemapVS(uint vid [[vertex_id]]) {
+  TIn o;
+  float2 p[3] = { float2(-1.0, -3.0), float2(-1.0, 1.0), float2(3.0, 1.0) };
+  o.pos = float4(p[vid], 0.0, 1.0);
+  o.uv = float2((p[vid].x + 1.0) * 0.5, (1.0 - p[vid].y) * 0.5);
+  return o;
+}
+
+fragment float4 tonemapFS(TIn in [[stage_in]], constant TUni &u [[constant buffer(1)]],
+                          texture2d<float> texFull [[texture(0)]],
+                          texture2d<float> bloomTex [[texture(1)]],
+                          sampler smp [[sampler(0)]]) {
+  float4 full = texFull.sample(smp, in.uv, level(0.0));
+  float3 c = (float3(1.0) / max(float3(0.0001), full.xyz)) - float3(1.0);
+  float3 bloom = bloomTex.sample(smp, in.uv).xyz * u.bloomTint.xyz;
+  float3 comp = ((0.25 - (u.bloomParams.x * 0.25)) * c + bloom * (u.bloomParams.x + u.bloomParams.y)) * u.exposure.x;
+  float2 deathOffset = in.uv - float2(0.5);
+  deathOffset.x = deathOffset.x * u.viewportSize.z;
+  float t12 = clamp(((dot(deathOffset, deathOffset) * 0.25) - 0.625) / -0.625, 0.0, 1.0);
+  float t13 = max((((t12 * (t12 * (3.0 - (2.0 * t12)))) * 0.97) + 0.03) - 0.0625, 0.0);
+  comp = comp * t13;
+  float3 scalar = comp + 0.25;
+  float3 outv = comp / scalar;
+  return float4(outv * outv, 0.0);
 }

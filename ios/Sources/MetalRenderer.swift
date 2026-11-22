@@ -63,6 +63,9 @@ final class MetalRenderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private var meshPipe: MTLRenderPipelineState?
+    private var tonemapPipe: MTLRenderPipelineState?
+    private var bloomTex: MTLTexture?
+    private var blackTex: MTLTexture?
     private var waterPipe: MTLRenderPipelineState?
     private var depthState: MTLDepthStencilState?
     private var waterDepthState: MTLDepthStencilState?
@@ -164,6 +167,13 @@ final class MetalRenderer {
         wdsDesc.depthCompareFunction = .lessEqual
         wdsDesc.isDepthWriteEnabled = false
 
+        let trpd = MTLRenderPipelineDescriptor()
+        trpd.vertexFunction = library.makeFunction(name: "tonemapVS")
+        trpd.fragmentFunction = library.makeFunction(name: "tonemapFS")
+        trpd.colorAttachments[0].pixelFormat = .bgra8Unorm
+        Boot.log("开始建 tonemap 管线")
+        tonemapPipe = try? dev.makeRenderPipelineState(descriptor: trpd)
+
         Boot.log("开始建 mesh 管线 (stride=\(vd.layouts[0].stride))")
         do {
             meshPipe = try dev.makeRenderPipelineState(descriptor: rpd)
@@ -224,6 +234,12 @@ final class MetalRenderer {
             flatNormal = fn
         }
         whiteTex = fb
+        // bloom 缺省用一张黑图（原版 bloom 是多级 downsample，这里不造假数据）
+        if let blk = dev.makeTexture(descriptor: fbDesc) {
+            var zero: [UInt8] = [0, 0, 0, 255]
+            blk.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &zero, bytesPerRow: 4)
+            blackTex = blk
+        }
 
         load(level: level)
         Boot.log("renderer init done \(level) err=\(lastError ?? "-")")
@@ -405,7 +421,7 @@ final class MetalRenderer {
     private func ensureTargets(_ w: Int, _ h: Int) {
         guard w > 0, h > 0, (w != width || h != height || sceneTex == nil) else { return }
         width = w; height = h
-        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
         d.usage = [.renderTarget, .shaderRead]
         sceneTex = device.makeTexture(descriptor: d)
         sceneTex2 = device.makeTexture(descriptor: d)
@@ -554,12 +570,27 @@ final class MetalRenderer {
             wenc.endEncoding()
         }
 
-        // 贴到 drawable
-        if let blit = cb.makeBlitCommandEncoder() {
-            blit.copy(from: sceneTex2, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-                      sourceSize: MTLSize(width: w, height: h, depth: 1),
-                      to: drawable.texture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
-            blit.endEncoding()
+        // Pass 3：Tonemap（原版 Tonemap0.frag：HDR 反解 + bloom + 曝光 + 暗角 + 输出曲线）
+        if let tonemapPipe {
+            let tp = MTLRenderPassDescriptor()
+            tp.colorAttachments[0].texture = drawable.texture
+            tp.colorAttachments[0].loadAction = .dontCare
+            tp.colorAttachments[0].storeAction = .store
+            if let tenc = cb.makeRenderCommandEncoder(descriptor: tp) {
+                struct TUni { var bloomTint: SIMD4<Float>; var bloomParams: SIMD4<Float>
+                              var viewportSize: SIMD4<Float>; var exposure: SIMD4<Float> }
+                var tu = TUni(bloomTint: envColor("bloomTint", SIMD3<Float>(1, 1, 1)),
+                              bloomParams: SIMD4<Float>(envNum("bloomIntensity", 0), 0, 0, 0),
+                              viewportSize: SIMD4<Float>(Float(w), Float(h), 1, 0),
+                              exposure: SIMD4<Float>(envNum("exposure", 1), 0, 0, 0))
+                tenc.setRenderPipelineState(tonemapPipe)
+                tenc.setFragmentBytes(&tu, length: MemoryLayout<TUni>.stride, index: 1)
+                tenc.setFragmentTexture(sceneTex2, index: 0)
+                tenc.setFragmentTexture(blackTex ?? fallbackTex, index: 1)
+                tenc.setFragmentSamplerState(clampSampler, index: 0)
+                tenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                tenc.endEncoding()
+            }
         }
         cb.present(drawable)
         cb.commit()
