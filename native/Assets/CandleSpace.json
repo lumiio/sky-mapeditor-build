@@ -127,8 +127,8 @@
    "sharp": 0.35
   }
  ],
- "vertices": 23523,
- "indices": 71175,
+ "vertices": 23547,
+ "indices": 71211,
  "stride": 72,
  "layout": {
   "pos": 0,
@@ -141,12 +141,12 @@
   "light2": 68
  },
  "bounds": [
-  -6.5445128019868495,
-  -4.557676613330841,
-  0.263234507192072,
-  20.055268535148283,
+  -75,
+  -20.149999618530273,
+  -75,
+  75,
   2.431475728750229,
-  29.73208687918138
+  75
  ],
  "focus": [
   -6.5445128019868495,
@@ -1348,6 +1348,35 @@
   },
   {
    "start": 64311,
+   "count": 36,
+   "name": "Cube",
+   "material": 2,
+   "min": [
+    -75,
+    -20.149999618530273,
+    -75
+   ],
+   "max": [
+    75,
+    -0.14999961853027344,
+    75
+   ],
+   "color": [
+    0.5,
+    0.5,
+    0.5,
+    1
+   ],
+   "texture": null,
+   "texture2": null,
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 64347,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -1376,7 +1405,7 @@
    "selfLit": null
   },
   {
-   "start": 65217,
+   "start": 65253,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -1405,7 +1434,7 @@
    "selfLit": null
   },
   {
-   "start": 66123,
+   "start": 66159,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1434,7 +1463,7 @@
    "selfLit": null
   },
   {
-   "start": 67173,
+   "start": 67209,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1463,7 +1492,7 @@
    "selfLit": null
   },
   {
-   "start": 68223,
+   "start": 68259,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1492,7 +1521,7 @@
    "selfLit": null
   },
   {
-   "start": 69273,
+   "start": 69309,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1521,7 +1550,7 @@
    "selfLit": null
   },
   {
-   "start": 71169,
+   "start": 71205,
    "count": 6,
    "name": "Plane",
    "material": 18,

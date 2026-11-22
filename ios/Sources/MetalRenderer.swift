@@ -259,12 +259,10 @@ final class MetalRenderer {
             acc += SIMD3<Float>((r.min[0]+r.max[0])/2, (r.min[1]+r.max[1])/2, (r.min[2]+r.max[2])/2) * w
             wsum += w
         }
-        center = wsum > 0 ? acc / wsum : SIMD3<Float>(0, 0, 0)
-        radius = 1
-        for r in mm.ranges {
-            let c = SIMD3<Float>((r.min[0]+r.max[0])/2, (r.min[1]+r.max[1])/2, (r.min[2]+r.max[2])/2)
-            radius = max(radius, simd_length(c - center) + simd_length(SIMD3<Float>(r.max[0]-r.min[0], r.max[1]-r.min[1], r.max[2]-r.min[2])) / 2)
-        }
+        // 取景用关卡 focus（前景密集区），不然 150 m 背景壳会把相机拉得很远
+        let fb = mm.focus
+        center = SIMD3<Float>((fb[0]+fb[3])/2, (fb[1]+fb[4])/2, (fb[2]+fb[5])/2)
+        radius = max(1, simd_length(SIMD3<Float>(fb[3]-fb[0], fb[4]-fb[1], fb[5]-fb[2])) / 2)
 
         // 水面：覆盖整关的大平面
         let ext: Float = 600
