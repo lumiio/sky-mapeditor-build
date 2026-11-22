@@ -658,7 +658,7 @@ final class MetalRenderer {
             if let uenc = cb.makeRenderCommandEncoder(descriptor: up) {
                 struct FU { var eyePos: SIMD4<Float>; var sunDir: SIMD4<Float>; var sunColor: SIMD4<Float>; var sunSize: SIMD4<Float>
                             var fogDH: SIMD4<Float>; var atmDen: SIMD4<Float>; var atmSample: SIMD4<Float>
-                            var avgSkybox: SIMD4<Float>; var atmSun: SIMD4<Float>; var earth: SIMD4<Float>; var vp: SIMD4<Float> }
+                            var avgSkybox: SIMD4<Float>; var atmSun: SIMD4<Float>; var earth: SIMD4<Float>; var vp: SIMD4<Float>; var avgLum: SIMD4<Float> }
                 var fu = FU(eyePos: SIMD4<Float>(eye, 1), sunDir: SIMD4<Float>(sunDir, 0),
                             sunColor: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
                             sunSize: SIMD4<Float>(envNum("sunSize", 0), 0, envNum("sunSize", 0), 0),
@@ -668,7 +668,7 @@ final class MetalRenderer {
                             avgSkybox: envColor("tintTop", SIMD3<Float>(0.02, 0.05, 0.1)),
                             atmSun: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
                             earth: SIMD4<Float>(0, -50000, 0, 50000),
-                            vp: SIMD4<Float>(Float(w), Float(h), 1, 0))
+                            vp: SIMD4<Float>(Float(w), Float(h), 1, 0), avgLum: SIMD4<Float>(1, 0, 0, 0))
                 uenc.setRenderPipelineState(fogUpsamplePipe)
                 uenc.setFragmentBytes(&fu, length: MemoryLayout<FU>.stride, index: 1)
                 uenc.setFragmentTexture(sceneTex2, index: 0)

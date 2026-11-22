@@ -217,7 +217,7 @@ fragment float4 fs(VOut in [[stage_in]], constant U &u [[buffer(1)]],
   finalColor = finalColor + selfLitColor;
 
   // 原版把 HDR 存成 c/(c+1)，Tonemap0.frag 里再 1/ldr-1 反解回来
-  return float4(finalColor / (finalColor + 1.0), 1.0);
+  return float4(finalColor, 1.0);
 }
 
 struct WU {
@@ -269,7 +269,7 @@ fragment float4 waterFS(WVOut in [[stage_in]], constant WU &u [[buffer(1)]],
     float ca = causticTex.sample(smp, in.uv23.xy).z;
     body = body * clamp(((ca * ca * 2.0 - 0.1) * 0.5) + 1.0, 0.55, 1.45) * 0.55;
     float3 col = mix(body, refl + spec, fres);
-    return float4(col / (col + 1.0), 1.0);
+    return float4(col, 1.0);
 }
 
 // ---- Tonemap0.frag 原样搬（HDR 反解 + bloom 混合 + 曝光 + 暗角 + 输出曲线）----
@@ -323,7 +323,7 @@ fragment float4 fogVolumeFS(FVOut in [[stage_in]], constant FVUni &u [[constant 
 struct FU {
   float4 eyePos; float4 sunDir; float4 sunColor; float4 sunSize;
   float4 fogDensityHeightDist; float4 atmosphereDensity; float4 atmosphereSample;
-  float4 avgSkyboxColor; float4 atmSunColor; float4 earthPosRad; float4 viewportSize;
+  float4 avgSkyboxColor; float4 atmSunColor; float4 earthPosRad; float4 viewportSize; float4 averageLum;
 };
 fragment float4 fogUpsampleFS(TIn in [[stage_in]], constant FU &u [[constant buffer(1)]],
                               texture2d<float> scene [[texture(0)]],
@@ -383,7 +383,8 @@ fragment float4 fogUpsampleFS(TIn in [[stage_in]], constant FU &u [[constant buf
 
   float lum = dot(float3(0.2126, 0.7152, 0.0722), sc.xyz) * 0.8;
   float w = max(fogW - lum * lum, 0.0);
-  return float4(sc.xyz * (1.0 - w) + fogCol, 1.0);
+  float3 hdr = (sc.xyz * (1.0 - w) + fogCol) / max(1e-4, u.averageLum.x);
+  return float4(1.0 / (float3(1.0) + max(float3(0.0001), hdr)), 0.0);
 }
 
 // ---- Fxaa0.frag 原样（4 邻域亮度 + 方向搜索 + 边缘判定）----
