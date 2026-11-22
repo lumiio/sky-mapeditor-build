@@ -384,7 +384,7 @@ final class MetalRenderer {
                     px[i] = Float16(c.x); px[i + 1] = Float16(c.y); px[i + 2] = Float16(c.z); px[i + 3] = 1
                 }
             }
-            tex.replace(region: MTLRegionMake2D(0, 0, n, n), slice: face, mipmapLevel: 0,
+            tex.replace(region: MTLRegionMake2D(0, 0, n, n), mipmapLevel: 0, slice: face,
                         withBytes: px, bytesPerRow: n * 8, bytesPerImage: n * n * 8)
         }
         if let cb = queue.makeCommandBuffer(), let blit = cb.makeBlitCommandEncoder() {
