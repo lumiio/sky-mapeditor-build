@@ -56,16 +56,100 @@
   "pointIntensity": 1
  },
  "lights": [],
- "vertices": 20814,
+ "beamos": [
+  {
+   "start": 0,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 1470,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 2940,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 4410,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 5880,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 7350,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 8820,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 10290,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 11760,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 13230,
+   "count": 1470,
+   "mesh": "DCube",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  }
+ ],
+ "vertices": 27752,
  "indices": 118440,
- "stride": 48,
+ "stride": 72,
  "layout": {
   "pos": 0,
   "normal": 12,
-  "uv": 24,
-  "light0": 32,
-  "light1": 36,
-  "light2": 40
+  "color": 24,
+  "uv0": 28,
+  "uv1": 44,
+  "light0": 60,
+  "light1": 64,
+  "light2": 68
  },
  "bounds": [
   -270.6350372065751,
@@ -107,7 +191,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 109560,
@@ -132,7 +220,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 105120,
@@ -157,7 +249,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 100680,
@@ -182,7 +278,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 96240,
@@ -207,7 +307,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 91800,
@@ -232,7 +336,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 87360,
@@ -257,7 +365,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 82920,
@@ -282,7 +394,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 78480,
@@ -307,7 +423,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 74040,
@@ -332,7 +452,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 69600,
@@ -357,7 +481,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 65160,
@@ -382,7 +510,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 60720,
@@ -407,7 +539,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 56280,
@@ -432,7 +568,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 51840,
@@ -457,7 +597,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 47400,
@@ -482,7 +626,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 42960,
@@ -507,7 +655,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 38520,
@@ -532,7 +684,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 34080,
@@ -557,7 +713,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 29640,
@@ -582,7 +742,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 25200,
@@ -607,7 +771,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 20760,
@@ -632,7 +800,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 16320,
@@ -657,7 +829,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 11880,
@@ -682,7 +858,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 7440,
@@ -707,7 +887,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 3000,
@@ -732,7 +916,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 0,
+   "selfLit": null
   },
   {
    "start": 0,
@@ -757,7 +945,11 @@
    ],
    "texture": "StoneBase",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   }
  ]
 }
