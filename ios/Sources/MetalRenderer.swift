@@ -373,6 +373,9 @@ final class MetalRenderer {
         let sunAz = envNum("sunAngleXZ", 30) * Float.pi / 180
         let sunDir = simd_normalize(SIMD3<Float>(cos(sunEl)*cos(sunAz), sin(sunEl), cos(sunEl)*sin(sunAz)))
 
+        let avgSkyC = envColor("tintMidMid", SIMD3<Float>(0.14, 0.14, 0.18))
+        let plC = envColor("pointColor", SIMD3<Float>(1, 0.85, 0.6))
+        let plK = envNum("pointIntensity", 1)
         var u = Uniforms(viewProj: vp, camPos: SIMD4<Float>(eye, 1),
                          sunDir: SIMD4<Float>(sunDir, 0),
                          sunColor: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
@@ -385,8 +388,8 @@ final class MetalRenderer {
                          tintBot: envColor("tintBot", SIMD3<Float>(0.18, 0.14, 0.1)),
                          exposure: SIMD4<Float>(envNum("exposure", 1), envNum("sunInt", 1),
                                                 envNum("fogDensity", 1), envNum("fogHeight", 0.1)),
-                         avgSky: SIMD4<Float>(envColor("tintMidMid", SIMD3<Float>(0.14, 0.14, 0.18)).xyz, 0),
-                         pointLight: SIMD4<Float>(envColor("pointColor", SIMD3<Float>(1, 0.85, 0.6)).xyz * envNum("pointIntensity", 1), 0),
+                         avgSky: SIMD4<Float>(avgSkyC.x, avgSkyC.y, avgSkyC.z, 0),
+                         pointLight: SIMD4<Float>(plC.x * plK, plC.y * plK, plC.z * plK, 0),
                          viewport: SIMD4<Float>(Float(w), Float(h), 0, 0))
 
         guard let cb = queue.makeCommandBuffer() else { return }
