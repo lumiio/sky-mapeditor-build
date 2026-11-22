@@ -129,14 +129,16 @@
  ],
  "vertices": 23523,
  "indices": 71175,
- "stride": 48,
+ "stride": 72,
  "layout": {
   "pos": 0,
   "normal": 12,
-  "uv": 24,
-  "light0": 32,
-  "light1": 36,
-  "light2": 40
+  "color": 24,
+  "uv0": 28,
+  "uv1": 44,
+  "light0": 60,
+  "light1": 64,
+  "light2": 68
  },
  "bounds": [
   -6.5445128019868495,
@@ -178,7 +180,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 1470,
@@ -203,7 +209,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 2271,
@@ -228,7 +238,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 3741,
@@ -253,7 +267,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 4791,
@@ -278,7 +296,11 @@
    ],
    "texture": null,
    "texture2": null,
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 5103,
@@ -303,7 +325,11 @@
    ],
    "texture": null,
    "texture2": null,
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 12411,
@@ -328,7 +354,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 13317,
@@ -353,7 +383,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 14367,
@@ -378,7 +412,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 15417,
@@ -403,7 +441,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 16467,
@@ -428,7 +470,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 17373,
@@ -453,7 +499,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 18423,
@@ -478,7 +528,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 20319,
@@ -503,7 +557,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 21225,
@@ -528,7 +586,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 23121,
@@ -553,7 +615,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 24171,
@@ -578,7 +644,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 25077,
@@ -603,7 +673,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 25983,
@@ -628,7 +702,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 27033,
@@ -653,7 +731,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 27087,
@@ -678,7 +760,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 28137,
@@ -703,7 +789,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 29835,
@@ -728,7 +818,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 31731,
@@ -753,7 +847,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 33201,
@@ -778,7 +876,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 34671,
@@ -803,7 +905,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 36141,
@@ -828,7 +934,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 37611,
@@ -853,7 +963,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 39081,
@@ -878,7 +992,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 40551,
@@ -903,7 +1021,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 41751,
@@ -928,7 +1050,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 42951,
@@ -953,7 +1079,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 46599,
@@ -978,7 +1108,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 48495,
@@ -1003,7 +1137,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 49401,
@@ -1028,7 +1166,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 51297,
@@ -1053,7 +1195,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 52347,
@@ -1078,7 +1224,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 54243,
@@ -1103,7 +1253,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 56139,
@@ -1128,7 +1282,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 57189,
@@ -1153,7 +1311,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 62415,
@@ -1178,7 +1340,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 64311,
@@ -1203,7 +1369,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 65217,
@@ -1228,7 +1398,11 @@
    ],
    "texture": "MeditationAlter",
    "texture2": "StoneGrunge2",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 66123,
@@ -1253,7 +1427,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 67173,
@@ -1278,7 +1456,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 68223,
@@ -1303,7 +1485,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 69273,
@@ -1328,7 +1514,11 @@
    ],
    "texture": "DawnIntroGate",
    "texture2": "Gray",
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": "DawnIntroGateSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
   },
   {
    "start": 71169,
@@ -1353,7 +1543,11 @@
    ],
    "texture": null,
    "texture2": null,
-   "uvScale": 1
+   "uvScale": 1,
+   "normTex": null,
+   "lightTex": null,
+   "normScale": 1,
+   "selfLit": null
   }
  ]
 }

@@ -6,20 +6,14 @@ import simd
 
 struct Uniforms {
     var viewProj: simd_float4x4
-    var camPos: simd_float4
+    var eyePos: simd_float4
     var sunDir: simd_float4
     var sunColor: simd_float4
-    var skyColor: simd_float4
-    var groundColor: simd_float4
-    var tintTop: simd_float4
-    var tintMidTop: simd_float4
-    var tintMidMid: simd_float4
-    var tintMidBot: simd_float4
-    var tintBot: simd_float4
-    var exposure: simd_float4
     var avgSky: simd_float4
     var pointLight: simd_float4
     var viewport: simd_float4
+    var exposure: simd_float4
+    var lightShadowConsts: simd_float4
 }
 
 struct WaterUniforms {
@@ -39,6 +33,7 @@ struct RangeDesc: Decodable {
     let start: Int; let count: Int; let name: String
     let material: Int?; let color: [Float]; let texture: String?; let texture2: String?
     let uvScale: Float?; let min: [Float]; let max: [Float]; let selfLit: [Float]?
+    let normTex: String?; let lightTex: String?; let normScale: Float?
 }
 enum EnvValue: Decodable {
     case num(Float)
@@ -73,6 +68,10 @@ final class MetalRenderer {
     private var waterDepthState: MTLDepthStencilState?
     private var sampler: MTLSamplerState?
     private var clampSampler: MTLSamplerState?
+    private var lodSampler: MTLSamplerState?
+    private var flatNormal: MTLTexture?
+    private var whiteTex: MTLTexture?
+    private var probeCube: MTLTexture?
     private var fallbackTex: MTLTexture?
     private var texCache: [String: MTLTexture] = [:]
     // 32×16 屏幕光簇（原版 Mesh2243.frag 的 u_light* 通道）
@@ -132,13 +131,16 @@ final class MetalRenderer {
         Boot.log("shader 函数就绪")
 
         let vd = MTLVertexDescriptor()
+        // 原版顶点：pos | nrm | a_color | a_uv0(vec4) | a_uv1(vec4) | light0 | light1 | light2 = 72 B
         vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 0
         vd.attributes[1].format = .float3; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 0
-        vd.attributes[2].format = .float2; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 0
-        vd.attributes[3].format = .uchar4; vd.attributes[3].offset = 32; vd.attributes[3].bufferIndex = 0
-        vd.attributes[4].format = .uchar4; vd.attributes[4].offset = 36; vd.attributes[4].bufferIndex = 0
-        vd.attributes[5].format = .uchar4; vd.attributes[5].offset = 40; vd.attributes[5].bufferIndex = 0
-        vd.layouts[0].stride = 48          // 顶点结构 48 B（pos3+nrm3+uv2+3×uchar4），stride 为 0 会让管线编译直接 abort
+        vd.attributes[2].format = .uchar4; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 0
+        vd.attributes[3].format = .float4; vd.attributes[3].offset = 28; vd.attributes[3].bufferIndex = 0
+        vd.attributes[4].format = .float4; vd.attributes[4].offset = 44; vd.attributes[4].bufferIndex = 0
+        vd.attributes[5].format = .uchar4; vd.attributes[5].offset = 60; vd.attributes[5].bufferIndex = 0
+        vd.attributes[6].format = .uchar4; vd.attributes[6].offset = 64; vd.attributes[6].bufferIndex = 0
+        vd.attributes[7].format = .uchar4; vd.attributes[7].offset = 68; vd.attributes[7].bufferIndex = 0
+        vd.layouts[0].stride = 72          // 顶点结构 72 B（pos/nrm/color/uv01/uv23/light0-2），stride 为 0 会让管线编译直接 abort
         vd.layouts[0].stepFunction = .perVertex
         vd.layouts[0].stepRate = 1
 
@@ -182,11 +184,15 @@ final class MetalRenderer {
         let cd = MTLSamplerDescriptor()
         cd.minFilter = .linear; cd.magFilter = .linear
         cd.sAddressMode = .clampToEdge; cd.tAddressMode = .clampToEdge
+        let ld = MTLSamplerDescriptor()          // 原版 textureLod(...,5.0) 用的 mip 采样器
+        ld.minFilter = .linear; ld.magFilter = .linear; ld.mipFilter = .linear
+        ld.sAddressMode = .clampToEdge; ld.tAddressMode = .clampToEdge
         guard let smp = dev.makeSamplerState(descriptor: sd),
-              let csmp = dev.makeSamplerState(descriptor: cd) else {
+              let csmp = dev.makeSamplerState(descriptor: cd),
+              let lsmp = dev.makeSamplerState(descriptor: ld) else {
             Boot.log("sampler 创建失败"); return nil
         }
-        sampler = smp; clampSampler = csmp
+        sampler = smp; clampSampler = csmp; lodSampler = lsmp
 
         func u32Tex(_ w: Int, _ h: Int) -> MTLTexture? {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Uint, width: w, height: h, mipmapped: false)
@@ -210,6 +216,14 @@ final class MetalRenderer {
         fallbackTex = fb
         var white: [UInt8] = [255, 255, 255, 255]
         fb.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &white, bytesPerRow: 4)
+        // u_normTex 缺失时的平法线（原版等价于 (0.5,0.5,1)）
+        let fnDesc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        if let fn = dev.makeTexture(descriptor: fnDesc) {
+            var flat: [UInt8] = [128, 128, 255, 255]
+            fn.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &flat, bytesPerRow: 4)
+            flatNormal = fn
+        }
+        whiteTex = fb
 
         load(level: level)
         Boot.log("renderer init done \(level) err=\(lastError ?? "-")")
@@ -320,6 +334,66 @@ final class MetalRenderer {
         }
     }
 
+    /// 原版 u_probeCube：由关卡 Ambience 的五段天色烘 32×32×6 立方体（含 mip，供 textureLod 5.0）
+    private func buildProbeCubeIfNeeded() {
+        guard probeCube == nil, let man else { return }
+        func col(_ k: String, _ d: SIMD3<Float>) -> SIMD3<Float> {
+            guard let a = man.env?[k]?.array, a.count >= 3 else { return d }
+            return SIMD3<Float>(a[0], a[1], a[2])
+        }
+        let cB = col("tintBot", SIMD3<Float>(0.18, 0.14, 0.1))
+        let cMB = col("tintMidBot", SIMD3<Float>(0.16, 0.14, 0.12))
+        let cMM = col("tintMidMid", SIMD3<Float>(0.14, 0.14, 0.18))
+        let cMT = col("tintMidTop", SIMD3<Float>(0.1, 0.18, 0.3))
+        let cT = col("tintTop", SIMD3<Float>(0.02, 0.05, 0.1))
+        let sunC = col("sunColor", SIMD3<Float>(1, 0.95, 0.85))
+        let sunEl = (man.env?["sunAngleY"]?.first ?? 55) * Float.pi / 180
+        let sunAz = (man.env?["sunAngleXZ"]?.first ?? 30) * Float.pi / 180
+        let sunDir = simd_normalize(SIMD3<Float>(cos(sunEl) * cos(sunAz), sin(sunEl), cos(sunEl) * sin(sunAz)))
+        let sunSize = man.env?["sunSize"]?.first ?? 0.02
+
+        let n = 32
+        let d = MTLTextureDescriptor.textureCubeDescriptor(pixelFormat: .rgba16Float, size: n, mipmapped: true)
+        d.usage = [.shaderRead]
+        guard let tex = device.makeTexture(descriptor: d) else { return }
+        for face in 0..<6 {
+            var px = [Float16](repeating: 0, count: n * n * 4)
+            for y in 0..<n {
+                for x in 0..<n {
+                    let u = (Float(x) + 0.5) / Float(n) * 2 - 1
+                    let v = (Float(y) + 0.5) / Float(n) * 2 - 1
+                    var dir: SIMD3<Float>
+                    switch face {
+                    case 0: dir = SIMD3<Float>(1, -v, -u)
+                    case 1: dir = SIMD3<Float>(-1, -v, u)
+                    case 2: dir = SIMD3<Float>(u, 1, v)
+                    case 3: dir = SIMD3<Float>(u, -1, -v)
+                    case 4: dir = SIMD3<Float>(u, -v, 1)
+                    default: dir = SIMD3<Float>(-u, -v, -1)
+                    }
+                    dir = simd_normalize(dir)
+                    let yy = dir.y
+                    var c: SIMD3<Float>
+                    if yy < -0.35 { c = cB }
+                    else if yy < 0 { c = simd_mix(cB, cMB, SIMD3(repeating: (yy + 0.35) / 0.35)) }
+                    else if yy < 0.30 { c = simd_mix(cMB, cMT, SIMD3(repeating: yy / 0.30)) }
+                    else { c = simd_mix(cMT, cT, SIMD3(repeating: min(1, (yy - 0.30) / 0.70))) }
+                    let dSun = simd_dot(dir, sunDir)
+                    if dSun > cos(sunSize) { c += sunC * pow((dSun - cos(sunSize)) / (1 - cos(sunSize) + 1e-6), 8) }
+                    let i = (y * n + x) * 4
+                    px[i] = Float16(c.x); px[i + 1] = Float16(c.y); px[i + 2] = Float16(c.z); px[i + 3] = 1
+                }
+            }
+            tex.replace(region: MTLRegionMake2D(0, 0, n, n), slice: face, mipmapLevel: 0,
+                        withBytes: px, bytesPerRow: n * 8)
+        }
+        if let cb = queue.makeCommandBuffer(), let blit = cb.makeBlitCommandEncoder() {
+            blit.generateMipmaps(for: tex)
+            blit.endEncoding(); cb.commit()
+        }
+        probeCube = tex
+    }
+
     private func tex(_ name: String) -> MTLTexture? {
         if let t = texCache[name] { return t }
         guard let root = assetsURL() else { return nil }
@@ -376,21 +450,14 @@ final class MetalRenderer {
         let avgSkyC = envColor("tintMidMid", SIMD3<Float>(0.14, 0.14, 0.18))
         let plC = envColor("pointColor", SIMD3<Float>(1, 0.85, 0.6))
         let plK = envNum("pointIntensity", 1)
-        var u = Uniforms(viewProj: vp, camPos: SIMD4<Float>(eye, 1),
+        var u = Uniforms(viewProj: vp, eyePos: SIMD4<Float>(eye, 1),
                          sunDir: SIMD4<Float>(sunDir, 0),
                          sunColor: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
-                         skyColor: envColor("tintMidTop", SIMD3<Float>(0.1, 0.18, 0.3)),
-                         groundColor: envColor("tintBot", SIMD3<Float>(0.18, 0.14, 0.1)),
-                         tintTop: envColor("tintTop", SIMD3<Float>(0.02, 0.05, 0.1)),
-                         tintMidTop: envColor("tintMidTop", SIMD3<Float>(0.1, 0.18, 0.3)),
-                         tintMidMid: envColor("tintMidMid", SIMD3<Float>(0.14, 0.14, 0.18)),
-                         tintMidBot: envColor("tintMidBot", SIMD3<Float>(0.16, 0.14, 0.12)),
-                         tintBot: envColor("tintBot", SIMD3<Float>(0.18, 0.14, 0.1)),
-                         exposure: SIMD4<Float>(envNum("exposure", 1), envNum("sunInt", 1),
-                                                envNum("fogDensity", 1), envNum("fogHeight", 0.1)),
                          avgSky: SIMD4<Float>(avgSkyC.x, avgSkyC.y, avgSkyC.z, 0),
                          pointLight: SIMD4<Float>(plC.x * plK, plC.y * plK, plC.z * plK, 0),
-                         viewport: SIMD4<Float>(Float(w), Float(h), 0, 0))
+                         viewport: SIMD4<Float>(Float(w), Float(h), 0, 0),
+                         exposure: SIMD4<Float>(envNum("exposure", 1), 0, 0, 0),
+                         lightShadowConsts: SIMD4<Float>(0, 0, 1, 0))
 
         guard let cb = queue.makeCommandBuffer() else { return }
 
@@ -412,11 +479,21 @@ final class MetalRenderer {
         enc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
         enc.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
         enc.setFragmentSamplerState(sampler, index: 0)
+        enc.setFragmentSamplerState(clampSampler, index: 1)
+        if let lodSampler {
+            enc.setFragmentSamplerState(lodSampler, index: 2)
+            enc.setVertexSamplerState(lodSampler, index: 0)
+        }
+        buildProbeCubeIfNeeded()
+        if let probeCube {
+            enc.setVertexTexture(probeCube, index: 0)
+            enc.setFragmentTexture(probeCube, index: 8)
+        }
         if let offsetsTex, let countsTex, let posTex, let colTex {
-            enc.setFragmentTexture(offsetsTex, index: 3)
-            enc.setFragmentTexture(countsTex, index: 4)
-            enc.setFragmentTexture(posTex, index: 5)
-            enc.setFragmentTexture(colTex, index: 6)
+            enc.setFragmentTexture(offsetsTex, index: 4)
+            enc.setFragmentTexture(countsTex, index: 5)
+            enc.setFragmentTexture(posTex, index: 6)
+            enc.setFragmentTexture(colTex, index: 7)
         }
         for r in man.ranges {
             let c = SIMD4<Float>(r.color.count >= 3 ? r.color[0] : 1, r.color.count >= 3 ? r.color[1] : 1, r.color.count >= 3 ? r.color[2] : 1, 1)
@@ -424,6 +501,16 @@ final class MetalRenderer {
             if let n = r.texture2, let t = tex(n) { enc.setFragmentTexture(t, index: 1) } else { enc.setFragmentTexture(fallbackTex, index: 1) }
             var cc = c
             enc.setFragmentBytes(&cc, length: MemoryLayout<SIMD4<Float>>.stride, index: 2)
+            // u_normTex / u_lightTex / u_selfLit / 两个 uv 缩放
+            if let n = r.normTex, let t = tex(n) { enc.setFragmentTexture(t, index: 2) } else { enc.setFragmentTexture(flatNormal ?? fallbackTex, index: 2) }
+            if let n = r.lightTex, let t = tex(n) { enc.setFragmentTexture(t, index: 3) } else { enc.setFragmentTexture(whiteTex ?? fallbackTex, index: 3) }
+            var sl = SIMD4<Float>(r.selfLit?.count ?? 0 >= 4 ? r.selfLit![0] : 0,
+                                  r.selfLit?.count ?? 0 >= 4 ? r.selfLit![1] : 0,
+                                  r.selfLit?.count ?? 0 >= 4 ? r.selfLit![2] : 0,
+                                  r.selfLit?.count ?? 0 >= 4 ? r.selfLit![3] : 0)
+            enc.setFragmentBytes(&sl, length: MemoryLayout<SIMD4<Float>>.stride, index: 3)
+            var prm = SIMD4<Float>(r.uvScale ?? 1, r.normScale ?? 1, 0, 0)
+            enc.setFragmentBytes(&prm, length: MemoryLayout<SIMD4<Float>>.stride, index: 4)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                       indexBuffer: ibuf, indexBufferOffset: r.start * 4)
         }
@@ -439,8 +526,9 @@ final class MetalRenderer {
 
         // Pass 2：水面
         var wu = WaterUniforms(viewProj: vp, camPos: SIMD4<Float>(eye, 1),
-                               sunDir: SIMD4<Float>(sunDir, 0), sunColor: u.sunColor,
-                               skyColor: u.skyColor,
+                               sunDir: SIMD4<Float>(sunDir, 0),
+                               sunColor: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
+                               skyColor: envColor("tintMidTop", SIMD3<Float>(0.1, 0.18, 0.3)),
                                simTerms: SIMD4<Float>(0, 0, 0, 0),
                                viewport: SIMD4<Float>(Float(w), Float(h), waterY, 0),
                                uvOffA: SIMD4<Float>(-floor(eye.x * 77 / 2048), -floor(eye.z * 77 / 2048), 0, 0),
