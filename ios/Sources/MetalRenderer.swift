@@ -51,9 +51,12 @@ struct LightDesc: Decodable {
     let pos: [Float]; let radius: Float; let color: [Float]; let sharp: Float
 }
 
+struct BeamoDesc: Decodable { let start: Int; let count: Int; let mesh: String; let skirt: Float; let density: Float; let blurLighting: Int }
+
 struct Manifest: Decodable {
     let level: String; let seaLevel: Float?
     let lights: [LightDesc]?
+    let beamos: [BeamoDesc]?
     let env: [String: EnvValue]?
     let vertices: Int; let indices: Int; let stride: Int
     let bounds: [Float]; let focus: [Float]; let ranges: [RangeDesc]
@@ -94,6 +97,8 @@ final class MetalRenderer {
     private(set) var levelName: String = ""
     private var man: Manifest?
     private var vbuf: MTLBuffer?
+    private var beamoVB: MTLBuffer?
+    private var beamoIB: MTLBuffer?
     private var ibuf: MTLBuffer?
     private var waterVB: MTLBuffer?
     private var waterIB: MTLBuffer?
@@ -163,6 +168,16 @@ final class MetalRenderer {
         wvd.attributes[0].format = .float3; wvd.attributes[0].offset = 0;  wvd.attributes[0].bufferIndex = 0
         wvd.attributes[1].format = .float2; wvd.attributes[1].offset = 12; wvd.attributes[1].bufferIndex = 0
         wvd.layouts[0].stride = 20; wvd.layouts[0].stepFunction = .perVertex; wvd.layouts[0].stepRate = 1
+        let bvd = MTLVertexDescriptor()
+        bvd.attributes[0].format = .float3; bvd.attributes[0].offset = 0; bvd.attributes[0].bufferIndex = 0
+        bvd.layouts[0].stride = 12; bvd.layouts[0].stepFunction = .perVertex; bvd.layouts[0].stepRate = 1
+        let frpd2 = MTLRenderPipelineDescriptor()
+        frpd2.vertexFunction = library.makeFunction(name: "fogVolumeVS")
+        frpd2.fragmentFunction = library.makeFunction(name: "fogVolumeFS")
+        frpd2.vertexDescriptor = bvd
+        frpd2.colorAttachments[0].pixelFormat = .rgba16Float
+        fogPipe = try? dev.makeRenderPipelineState(descriptor: frpd2)
+
         let wrpd = MTLRenderPipelineDescriptor()
         wrpd.vertexFunction = wvs; wrpd.fragmentFunction = wfs; wrpd.vertexDescriptor = wvd
         wrpd.colorAttachments[0].pixelFormat = .bgra8Unorm
@@ -178,11 +193,6 @@ final class MetalRenderer {
         Boot.log("开始建 tonemap 管线")
         tonemapPipe = try? dev.makeRenderPipelineState(descriptor: trpd)
 
-        let frpd = MTLRenderPipelineDescriptor()
-        frpd.vertexFunction = library.makeFunction(name: "fogVolumeVS")
-        frpd.fragmentFunction = library.makeFunction(name: "fogVolumeFS")
-        frpd.colorAttachments[0].pixelFormat = .rgba16Float
-        fogPipe = try? dev.makeRenderPipelineState(descriptor: frpd)
         let urpd = MTLRenderPipelineDescriptor()
         urpd.vertexFunction = library.makeFunction(name: "tonemapVS")
         urpd.fragmentFunction = library.makeFunction(name: "fogUpsampleFS")
@@ -295,6 +305,17 @@ final class MetalRenderer {
         let fb = mm.focus
         center = SIMD3<Float>((fb[0]+fb[3])/2, (fb[1]+fb[4])/2, (fb[2]+fb[5])/2)
         radius = max(1, simd_length(SIMD3<Float>(fb[3]-fb[0], fb[4]-fb[1], fb[5]-fb[2])) / 2)
+
+        // Beamo 体积网格（FogVolume 用的遮挡体）
+        if let bvURL = root.appendingPathComponent(level + ".beamo.verts") as URL?,
+           FileManager.default.fileExists(atPath: bvURL.path),
+           let bdata = try? Data(contentsOf: bvURL),
+           let bidx = try? Data(contentsOf: root.appendingPathComponent(level + ".beamo.idx")),
+           !bdata.isEmpty {
+            beamoVB = device.makeBuffer(bytes: (bdata as NSData).bytes, length: bdata.count, options: .storageModeShared)
+            beamoIB = device.makeBuffer(bytes: (bidx as NSData).bytes, length: bidx.count, options: .storageModeShared)
+            Boot.log("beamo 缓冲 \(bdata.count) B / \(bidx.count) B")
+        }
 
         // 水面：覆盖整关的大平面
         let ext: Float = 600
@@ -595,16 +616,25 @@ final class MetalRenderer {
         if let fogPipe, let fogUpsamplePipe, let fogTex, let fogOut {
             let fp = MTLRenderPassDescriptor()
             fp.colorAttachments[0].texture = fogTex
-            fp.colorAttachments[0].loadAction = .dontCare
+            fp.colorAttachments[0].loadAction = .clear
+            fp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
             fp.colorAttachments[0].storeAction = .store
-            if let fenc = cb.makeRenderCommandEncoder(descriptor: fp) {
+            fp.depthAttachment.texture = depthTex
+            fp.depthAttachment.loadAction = .load
+            fp.depthAttachment.storeAction = .dontCare
+            if let fenc = cb.makeRenderCommandEncoder(descriptor: fp), let beamoVB, let beamoIB, let bm = man.beamos {
                 struct FV { var params: SIMD4<Float> }
                 var fv = FV(params: SIMD4<Float>(envNum("fogVolumeIntensity", 0), nearD, farD, 0))
                 fenc.setRenderPipelineState(fogPipe)
+                fenc.setDepthStencilState(depthState)
+                fenc.setCullMode(.none)
+                fenc.setVertexBuffer(beamoVB, offset: 0, index: 0)
+                fenc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
                 fenc.setFragmentBytes(&fv, length: MemoryLayout<FV>.stride, index: 1)
-                fenc.setFragmentTexture(depthTex, index: 1)
-                fenc.setFragmentSamplerState(clampSampler, index: 0)
-                fenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                for b in bm where b.start < b.count + b.start {
+                    fenc.drawIndexedPrimitives(type: .triangle, indexCount: b.count, indexType: .uint32,
+                                               indexBuffer: beamoIB, indexBufferOffset: b.start * 4)
+                }
                 fenc.endEncoding()
             }
             let up = MTLRenderPassDescriptor()

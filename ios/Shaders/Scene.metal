@@ -302,23 +302,21 @@ fragment float4 tonemapFS(TIn in [[stage_in]], constant TUni &u [[constant buffe
   return float4(outv * outv, 0.0);
 }
 
-// ---- FogVolume0.frag 原样：整屏把深度 × 强度写进雾纹理（背面写负值）----
-struct FVUni { float4 params; };   // x = u_intensity, y = near, z = far
-vertex TIn fogVolumeVS(uint vid [[vertex_id]]) {
-  TIn o;
-  float2 p[3] = { float2(-1.0, -3.0), float2(-1.0, 1.0), float2(3.0, 1.0) };
-  o.pos = float4(p[vid], 0.0, 1.0);
-  o.uv = float2((p[vid].x + 1.0) * 0.5, (1.0 - p[vid].y) * 0.5);
+// ---- FogVolume0.frag 原样：用 Beamo 的遮挡体画体积，正面写 +、背面写 - ----
+struct FVIn { float3 pos [[attribute(0)]]; };
+struct FVOut { float4 pos [[position]]; float dist; };
+struct FVUni { float4 params; };   // x = u_intensity
+vertex FVOut fogVolumeVS(FVIn in [[stage_in]], constant U &u [[buffer(1)]]) {
+  FVOut o;
+  o.pos = u.viewProj * float4(in.pos, 1.0);
+  o.dist = length(in.pos - u.eyePos.xyz);
   return o;
 }
-fragment float4 fogVolumeFS(TIn in [[stage_in]], constant FVUni &u [[constant buffer(1)]],
-                            depth2d<float> depthTex [[texture(1)]], sampler smp [[sampler(0)]]) {
-  float d = depthTex.sample(smp, in.uv);
-  // 原版取的是 1/gl_FragCoord.w（视距），这里用同一含义：把 NDC 深度反解成世界距离
-  float near = u.params.y, far = u.params.z;
-  float dist = (2.0 * near * far) / (far + near - d * (far - near));
-  float Do = min(256000.0, dist);
-  return float4(Do * u.params.x, 0, 0, 0);
+fragment float4 fogVolumeFS(FVOut in [[stage_in]], constant FVUni &u [[constant buffer(1)]],
+                            bool front [[front_facing]]) {
+  float Do = min(256000.0, in.dist);
+  float sign_ = front ? 0.001 : -0.001;
+  return float4((Do * u.params.x) * sign_, 0, 0, 0);
 }
 
 // ---- FogUpsample0.frag 的雾合成核心（clouds/alpha/beacon 分支按原条件关闭）----

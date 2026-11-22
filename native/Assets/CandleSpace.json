@@ -127,6 +127,256 @@
    "sharp": 0.35
   }
  ],
+ "beamos": [
+  {
+   "start": 0,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 1896,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 3366,
+   "count": 801,
+   "mesh": "TutorialRocks_04",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 4167,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 5637,
+   "count": 702,
+   "mesh": "CandleSpaceCenterNoColumns",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 6339,
+   "count": 1050,
+   "mesh": "TutorialRocks_03",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 7389,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 8859,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 10329,
+   "count": 1200,
+   "mesh": "TutorialRocks_01",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 11529,
+   "count": 1200,
+   "mesh": "TutorialRocks_01",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 12729,
+   "count": 1050,
+   "mesh": "TutorialRocks_03",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 13779,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 15675,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 17571,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 19041,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 20937,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 22407,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 24303,
+   "count": 276,
+   "mesh": "WaterRocks_01",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 24579,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 26475,
+   "count": 276,
+   "mesh": "WaterRocks_01",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 26751,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 28647,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 30543,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 32013,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 33909,
+   "count": 1896,
+   "mesh": "TutorialRocks_02",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 35805,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 37275,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 38745,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 40215,
+   "count": 1050,
+   "mesh": "TutorialRocks_03",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 41265,
+   "count": 1470,
+   "mesh": "DCube2",
+   "skirt": 0,
+   "density": 1148846080,
+   "blurLighting": 0
+  },
+  {
+   "start": 42735,
+   "count": 1200,
+   "mesh": "TutorialRocks_01",
+   "skirt": 1048576000,
+   "density": 1148846080,
+   "blurLighting": 0
+  }
+ ],
  "vertices": 23427,
  "indices": 70863,
  "stride": 72,
