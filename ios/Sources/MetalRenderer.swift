@@ -446,7 +446,7 @@ final class MetalRenderer {
         let up = SIMD3<Float>(0, 1, 0)
         let right = simd_normalize(simd_cross(fwd, up))
         let camUp = simd_cross(right, fwd)
-        let proj = perspective(0.9, Float(w) / Float(h), max(dist * 0.01, 0.05), dist * 20)
+        let proj = perspective(50.0 * Float.pi / 180, Float(w) / Float(h), max(dist * 0.01, 0.05), dist * 20)
         let viewM = lookAt(eye, center, camUp)
         let vp = proj * viewM
         updateClusters(vp, w, h)
