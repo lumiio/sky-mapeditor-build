@@ -433,8 +433,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 1470,
@@ -462,8 +461,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 2271,
@@ -471,14 +469,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -491,8 +489,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 2655,
@@ -520,8 +517,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 4125,
@@ -529,14 +525,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -549,8 +545,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 4509,
@@ -578,8 +573,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 5559,
@@ -602,13 +596,8 @@
     0.5,
     1
    ],
-   "texture": null,
-   "texture2": null,
    "uvScale": 1,
-   "normTex": null,
-   "lightTex": null,
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 12867,
@@ -636,8 +625,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 13773,
@@ -645,14 +633,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -665,8 +653,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 14157,
@@ -694,8 +681,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 15207,
@@ -703,14 +689,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -723,8 +709,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 15591,
@@ -752,8 +737,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 16641,
@@ -781,8 +765,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 17691,
@@ -790,14 +773,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -810,8 +793,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 18075,
@@ -819,14 +801,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -839,8 +821,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 18459,
@@ -868,8 +849,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 19365,
@@ -897,8 +877,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 20415,
@@ -926,8 +905,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 22311,
@@ -955,8 +933,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 23217,
@@ -984,8 +961,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 25113,
@@ -993,14 +969,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -1013,8 +989,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 25497,
@@ -1042,8 +1017,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 26547,
@@ -1051,14 +1025,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -1071,8 +1045,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 26931,
@@ -1100,8 +1073,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 27837,
@@ -1129,8 +1101,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 28743,
@@ -1158,8 +1129,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 29793,
@@ -1187,8 +1157,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 29847,
@@ -1216,8 +1185,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 30897,
@@ -1245,8 +1213,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 32595,
@@ -1274,8 +1241,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 34491,
@@ -1303,8 +1269,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 35961,
@@ -1332,8 +1297,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 37431,
@@ -1361,8 +1325,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 38901,
@@ -1390,8 +1353,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 40371,
@@ -1419,8 +1381,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 41841,
@@ -1448,8 +1409,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 43311,
@@ -1477,8 +1437,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 44511,
@@ -1486,14 +1445,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -1506,8 +1465,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 44895,
@@ -1535,8 +1493,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 46095,
@@ -1564,8 +1521,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 49743,
@@ -1593,8 +1549,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 51639,
@@ -1622,8 +1577,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 52545,
@@ -1651,8 +1605,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 54441,
@@ -1680,8 +1633,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 55491,
@@ -1709,8 +1661,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 57387,
@@ -1738,8 +1689,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 59283,
@@ -1767,8 +1717,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 60333,
@@ -1796,8 +1745,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 65559,
@@ -1825,8 +1773,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 67455,
@@ -1854,8 +1801,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 68361,
@@ -1883,8 +1829,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 69267,
@@ -1912,8 +1857,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 70317,
@@ -1941,8 +1885,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 71367,
@@ -1970,8 +1913,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 72417,
@@ -1979,14 +1921,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -1999,8 +1941,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 72801,
@@ -2008,14 +1949,14 @@
    "name": "ConstellationAchievementStarField",
    "material": 16,
    "min": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "max": [
-    null,
-    null,
-    null
+    0,
+    0,
+    0
    ],
    "color": [
     0.3400680124759674,
@@ -2028,8 +1969,7 @@
    "uvScale": 1,
    "normTex": "MeditationAlterSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 73185,
@@ -2057,8 +1997,7 @@
    "uvScale": 1,
    "normTex": "DawnIntroGateSh",
    "lightTex": "White",
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   },
   {
    "start": 75081,
@@ -2081,13 +2020,8 @@
     0.5,
     1
    ],
-   "texture": null,
-   "texture2": null,
    "uvScale": 1,
-   "normTex": null,
-   "lightTex": null,
-   "normScale": 1,
-   "selfLit": null
+   "normScale": 1
   }
  ]
 }

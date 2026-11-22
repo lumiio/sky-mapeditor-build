@@ -289,8 +289,10 @@ final class MetalRenderer {
         guard let root = assetsURL() else { Boot.log("Assets 目录缺失"); lastError = "Assets 资源目录缺失"; return }
         Boot.log("Assets \(root.path)")
         let jsonURL = root.appendingPathComponent("\(level).json")
-        guard let data = try? Data(contentsOf: jsonURL),
-              let m = try? JSONDecoder().decode(Manifest.self, from: data) else { lastError = "manifest 解析失败 \(level)"; return }
+        guard let data = try? Data(contentsOf: jsonURL) else { lastError = "manifest 读不到 \(level)"; return }
+        let m: Manifest
+        do { m = try JSONDecoder().decode(Manifest.self, from: data) }
+        catch { lastError = "manifest 解析失败 \(level): \(error)"; Boot.log("manifest 错误 \(error)"); return }
         man = m; levelName = level
         waterY = m.seaLevel ?? -5
 
