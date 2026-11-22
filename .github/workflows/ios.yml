@@ -1,0 +1,52 @@
+name: ios-unsigned-ipa
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Compile Metal shaders
+        run: |
+          mkdir -p ios/Resources/Shaders
+          xcrun -sdk iphoneos metal -c ios/Shaders/Scene.metal -o /tmp/Scene.air
+          xcrun -sdk iphoneos metallib /tmp/Scene.air -o ios/Resources/Shaders/default.metallib
+          ls -lh ios/Resources/Shaders/default.metallib
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        working-directory: ios
+        run: |
+          xcodebuild -project SkyMapEditor.xcodeproj \
+            -scheme SkyMapEditor \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package unsigned .ipa
+        run: |
+          mkdir -p out/Payload
+          cp -R ios/build/Build/Products/Release-iphoneos/SkyMapEditor.app out/Payload/
+          cd out && zip -qry SkyMapEditor-unsigned.ipa Payload
+          ls -lh SkyMapEditor-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyMapEditor-unsigned-ipa
+          path: out/SkyMapEditor-unsigned.ipa
