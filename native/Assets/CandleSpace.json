@@ -377,8 +377,8 @@
    "blurLighting": 0
   }
  ],
- "vertices": 23427,
- "indices": 70863,
+ "vertices": 26243,
+ "indices": 75087,
  "stride": 72,
  "layout": {
   "pos": 0,
@@ -467,6 +467,35 @@
   },
   {
    "start": 2271,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 2655,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -495,7 +524,36 @@
    "selfLit": null
   },
   {
-   "start": 3741,
+   "start": 4125,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 4509,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -524,7 +582,7 @@
    "selfLit": null
   },
   {
-   "start": 4791,
+   "start": 5559,
    "count": 7308,
    "name": "CandleSpaceStatue_01",
    "material": 27,
@@ -553,7 +611,7 @@
    "selfLit": null
   },
   {
-   "start": 12099,
+   "start": 12867,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -582,7 +640,36 @@
    "selfLit": null
   },
   {
-   "start": 13005,
+   "start": 13773,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 14157,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -611,7 +698,36 @@
    "selfLit": null
   },
   {
-   "start": 14055,
+   "start": 15207,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 15591,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -640,7 +756,7 @@
    "selfLit": null
   },
   {
-   "start": 15105,
+   "start": 16641,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -669,7 +785,65 @@
    "selfLit": null
   },
   {
-   "start": 16155,
+   "start": 17691,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 18075,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 18459,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -698,7 +872,7 @@
    "selfLit": null
   },
   {
-   "start": 17061,
+   "start": 19365,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -727,7 +901,7 @@
    "selfLit": null
   },
   {
-   "start": 18111,
+   "start": 20415,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -756,7 +930,7 @@
    "selfLit": null
   },
   {
-   "start": 20007,
+   "start": 22311,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -785,7 +959,7 @@
    "selfLit": null
   },
   {
-   "start": 20913,
+   "start": 23217,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -814,7 +988,36 @@
    "selfLit": null
   },
   {
-   "start": 22809,
+   "start": 25113,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 25497,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -843,7 +1046,36 @@
    "selfLit": null
   },
   {
-   "start": 23859,
+   "start": 26547,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 26931,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -872,7 +1104,7 @@
    "selfLit": null
   },
   {
-   "start": 24765,
+   "start": 27837,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -901,7 +1133,7 @@
    "selfLit": null
   },
   {
-   "start": 25671,
+   "start": 28743,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -930,7 +1162,7 @@
    "selfLit": null
   },
   {
-   "start": 26721,
+   "start": 29793,
    "count": 54,
    "name": "CandleSpaceCandlePlatformCham",
    "material": 16,
@@ -959,7 +1191,7 @@
    "selfLit": null
   },
   {
-   "start": 26775,
+   "start": 29847,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -988,7 +1220,7 @@
    "selfLit": null
   },
   {
-   "start": 27825,
+   "start": 30897,
    "count": 1698,
    "name": "CandleSpaceStatuePlatform_01",
    "material": 16,
@@ -1017,7 +1249,7 @@
    "selfLit": null
   },
   {
-   "start": 29523,
+   "start": 32595,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1046,7 +1278,7 @@
    "selfLit": null
   },
   {
-   "start": 31419,
+   "start": 34491,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -1075,7 +1307,7 @@
    "selfLit": null
   },
   {
-   "start": 32889,
+   "start": 35961,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -1104,7 +1336,7 @@
    "selfLit": null
   },
   {
-   "start": 34359,
+   "start": 37431,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -1133,7 +1365,7 @@
    "selfLit": null
   },
   {
-   "start": 35829,
+   "start": 38901,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -1162,7 +1394,7 @@
    "selfLit": null
   },
   {
-   "start": 37299,
+   "start": 40371,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -1191,7 +1423,7 @@
    "selfLit": null
   },
   {
-   "start": 38769,
+   "start": 41841,
    "count": 1470,
    "name": "DCube",
    "material": 16,
@@ -1220,7 +1452,7 @@
    "selfLit": null
   },
   {
-   "start": 40239,
+   "start": 43311,
    "count": 1200,
    "name": "TutorialRocks_01",
    "material": 34,
@@ -1249,7 +1481,36 @@
    "selfLit": null
   },
   {
-   "start": 41439,
+   "start": 44511,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 44895,
    "count": 1200,
    "name": "TutorialRocks_01",
    "material": 34,
@@ -1278,7 +1539,7 @@
    "selfLit": null
   },
   {
-   "start": 42639,
+   "start": 46095,
    "count": 3648,
    "name": "FriendshipStatue_03",
    "material": 16,
@@ -1307,7 +1568,7 @@
    "selfLit": null
   },
   {
-   "start": 46287,
+   "start": 49743,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1336,7 +1597,7 @@
    "selfLit": null
   },
   {
-   "start": 48183,
+   "start": 51639,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -1365,7 +1626,7 @@
    "selfLit": null
   },
   {
-   "start": 49089,
+   "start": 52545,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1394,7 +1655,7 @@
    "selfLit": null
   },
   {
-   "start": 50985,
+   "start": 54441,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1423,7 +1684,7 @@
    "selfLit": null
   },
   {
-   "start": 52035,
+   "start": 55491,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1452,7 +1713,7 @@
    "selfLit": null
   },
   {
-   "start": 53931,
+   "start": 57387,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1481,7 +1742,7 @@
    "selfLit": null
   },
   {
-   "start": 55827,
+   "start": 59283,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1510,7 +1771,7 @@
    "selfLit": null
   },
   {
-   "start": 56877,
+   "start": 60333,
    "count": 5226,
    "name": "FriendshipStatue_01",
    "material": 16,
@@ -1539,7 +1800,7 @@
    "selfLit": null
   },
   {
-   "start": 62103,
+   "start": 65559,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1568,7 +1829,7 @@
    "selfLit": null
   },
   {
-   "start": 63999,
+   "start": 67455,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -1597,7 +1858,7 @@
    "selfLit": null
   },
   {
-   "start": 64905,
+   "start": 68361,
    "count": 906,
    "name": "CandleSpaceCandlePlatform",
    "material": 16,
@@ -1626,7 +1887,7 @@
    "selfLit": null
   },
   {
-   "start": 65811,
+   "start": 69267,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1655,7 +1916,7 @@
    "selfLit": null
   },
   {
-   "start": 66861,
+   "start": 70317,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1684,7 +1945,7 @@
    "selfLit": null
   },
   {
-   "start": 67911,
+   "start": 71367,
    "count": 1050,
    "name": "TutorialRocks_03",
    "material": 34,
@@ -1713,7 +1974,65 @@
    "selfLit": null
   },
   {
-   "start": 68961,
+   "start": 72417,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 72801,
+   "count": 384,
+   "name": "ConstellationAchievementStarField",
+   "material": 16,
+   "min": [
+    null,
+    null,
+    null
+   ],
+   "max": [
+    null,
+    null,
+    null
+   ],
+   "color": [
+    0.3400680124759674,
+    0.3400680124759674,
+    0.3400680124759674,
+    1
+   ],
+   "texture": "MeditationAlter",
+   "texture2": "StoneGrunge2",
+   "uvScale": 1,
+   "normTex": "MeditationAlterSh",
+   "lightTex": "White",
+   "normScale": 1,
+   "selfLit": null
+  },
+  {
+   "start": 73185,
    "count": 1896,
    "name": "TutorialRocks_02",
    "material": 34,
@@ -1742,7 +2061,7 @@
    "selfLit": null
   },
   {
-   "start": 70857,
+   "start": 75081,
    "count": 6,
    "name": "Plane",
    "material": 18,
