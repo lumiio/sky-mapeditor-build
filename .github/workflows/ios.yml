@@ -68,6 +68,8 @@ jobs:
           done
       - name: Dome asset QA（原版穹顶网格/入口/视锥覆盖）
         run: python3 qa/dome_check.py native/Assets
+      - name: Uniform 绑定 QA（原版 Ambience/bc() 字段映射）
+        run: python3 qa/uniform_check.py ios/Sources
       - uses: actions/upload-artifact@v4
         if: always()
         with:

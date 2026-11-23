@@ -757,8 +757,16 @@ final class MetalRenderer {
         skyF.u_eyePos = t3(eye)
         skyF.u_time = Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000))
         skyF.u_sunDir = t3(sunDir)
-        skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
+        // 原版 server.cjs Ambience 的 uniforms 映射（照抄，不自拟）：
+        //   u_sunSizeIntMoonPhase = [sunSize, sunInt, sunToMoon, moonPhase]
+        //   u_fogDensityHeightDist = [fogDensity, fogHeight, drawDistance]
+        skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1),
+                                      envNum("sunToMoon", 0), envNum("moonPhase", 0.5))
+        skyF.u_fogDensityHeightDist = (envNum("fogDensity", 1), envNum("fogHeight", 0.1), envNum("drawDistance", 15000))
+        skyF.u_atmosphereDensity = envNum("atmosphereDensity", 1)
+        skyF.u_probeExposure = envNum("exposure", 1)
         skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
+        skyF.u_atmosphereSunColor = (skyF.u_sunColor.0, skyF.u_sunColor.1, skyF.u_sunColor.2, 1)
         skyF.u_averageSkyColor = (averageSky.x, averageSky.y, averageSky.z)
         skyF.u_averageSkyOcclusion = 1
         skyF.u_averageSkyboxColor = (averageSky.x, averageSky.y, averageSky.z, 1)
@@ -800,7 +808,8 @@ final class MetalRenderer {
         sky.u_cloudColor = (cloudColV.x, cloudColV.y, cloudColV.z)
         sky.u_cloudAbsorption = envNum("cloudAbsorption", 0)
         sky.u_cloudPatchiness = envNum("cloudPatchiness", 0)
-        sky.u_skyFadeOut = 1     // 1 = 正常显示（0 会把整块穹顶淡成黑）
+        // fs 末段 alpha = 1 - u_skyFadeOut，且颜色按同一权重与雾色混合：1 会把整块穹顶压成全黑（上一轮真机整屏黑即此）
+        sky.u_skyFadeOut = 0
         if let dome, !debugSkipSkyDome {
             dome.setProbeColor(SIMD3<Float>(averageSky.x, averageSky.y, averageSky.z))
             dome.encode(enc, eye: eye, radiusScale: farD * 0.9,
@@ -810,8 +819,10 @@ final class MetalRenderer {
         }
 
         // 原版地形片元读取的 PerFrame 字段：u_camMat@480 / u_lightShadowConsts@560 / u_eyePos@608 / u_sunDir@880 / u_sunColor@912 / u_pointLight@1184
-        Boot.log("结构体尺寸 PerFrame=\(MemoryLayout<PerFrameUniforms>.stride) PerObject=\(MemoryLayout<PerObjectUniforms>.stride) DomeObj=\(MemoryLayout<DomeObjectUniforms>.stride) PerPass=\(MemoryLayout<PerPassUniforms>.stride)")
-        Boot.log("PerFrame 偏移 camMat=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_camMat) ?? -1) eyePos=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_eyePos) ?? -1) sunDir=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunDir) ?? -1) sunColor=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunColor) ?? -1) pointLight=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_pointLight) ?? -1) size=\(MemoryLayout<PerFrameUniforms>.stride)")
+        if frameIdx == 0 {
+            Boot.log("结构体尺寸 PerFrame=\(MemoryLayout<PerFrameUniforms>.stride) PerObject=\(MemoryLayout<PerObjectUniforms>.stride) DomeObj=\(MemoryLayout<DomeObjectUniforms>.stride) PerPass=\(MemoryLayout<PerPassUniforms>.stride)")
+            Boot.log("PerFrame 偏移 camMat=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_camMat) ?? -1) eyePos=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_eyePos) ?? -1) sunDir=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunDir) ?? -1) sunColor=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunColor) ?? -1) pointLight=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_pointLight) ?? -1) size=\(MemoryLayout<PerFrameUniforms>.stride)")
+        }
         if let terrain {
             var pf = skyF
             // 地形 vs 用的 PerFrame 字段（按 GrassShMesh/SandShMeshDecal/RockFaceSh/RockFaceRainSh/CloudSh 的 vs IR 核对）：
@@ -822,6 +833,18 @@ final class MetalRenderer {
             pf.u_camMat = mat4(viewM)
             pf.u_lightShadowConsts = (0.01, 0.01, 0.01, 0.01) // 引擎构造函数里直接存 0x3c23d70a=0.01 到 4 个分量
             pf.u_pointLight = (plC.x * plK, plC.y * plK, plC.z * plK, 0)
+            // 原版 bc()：SH 是 9 系数 × RGB（coef0 为常数项），常数天空 Radiance L 只有 coef0 非零：
+            // u_probeShR0 = [t0,t3,0→t9...]，t0 = L.r * 0.2820948（Y00），u_averageProbeColor = t0 * 3.5449078
+            let shK: Float = 0.2820947766
+            pf.u_probeShR0 = (averageSky.x * shK, 0, 0, 0)
+            pf.u_probeShR1 = (0, 0, 0, 0)
+            pf.u_probeShG0 = (averageSky.y * shK, 0, 0, 0)
+            pf.u_probeShG1 = (0, 0, 0, 0)
+            pf.u_probeShB0 = (averageSky.z * shK, 0, 0, 0)
+            pf.u_probeShB1 = (0, 0, 0, 0)
+            pf.u_probeShRGB2 = (0, 0, 0, 0)
+            pf.u_averageProbeColor = (averageSky.x, averageSky.y, averageSky.z, 1)
+            pf.u_probeCenter = (eye.x, eye.y, eye.z, 1)
             terrain.encode(enc, perFrame: &pf, perPass: SIMD4<Float>(skyP.u_viewportSize.0, skyP.u_viewportSize.1, 1 / Float(w), 1 / Float(h)))
             enc.setRenderPipelineState(meshPipe)
         } else {
@@ -874,7 +897,7 @@ final class MetalRenderer {
         wrp.depthAttachment.texture = depthTex
         wrp.depthAttachment.loadAction = .load
         wrp.depthAttachment.storeAction = .dontCare
-        if debugSkipWater { Boot.log("调试：跳过水面 pass") }
+        if debugSkipWater && frameIdx == 0 { Boot.log("调试：跳过水面 pass（水面仍为占位 MSL，未接原版 Ocean*）") }
         if !debugSkipWater, let wenc = cb.makeRenderCommandEncoder(descriptor: wrp) {
             wenc.setRenderPipelineState(waterPipe)
             wenc.setDepthStencilState(waterDepthState)
