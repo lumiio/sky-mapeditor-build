@@ -964,36 +964,14 @@ final class MetalRenderer {
             wenc.endEncoding()
         }
 
-        // Pass 3：FogVolume → Pass 4：FogUpsample
-        if let fogPipe, let fogUpsamplePipe, let fogTex, let fogOut {
-            let fp = MTLRenderPassDescriptor()
-            fp.colorAttachments[0].texture = fogTex
-            fp.colorAttachments[0].loadAction = .clear
-            fp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-            fp.colorAttachments[0].storeAction = .store
-            fp.depthAttachment.texture = depthTex
-            fp.depthAttachment.loadAction = .load
-            fp.depthAttachment.storeAction = .dontCare
-            if let fenc = cb.makeRenderCommandEncoder(descriptor: fp), let beamoVB, let beamoIB, let bm = man.beamos {
-                struct FV { var params: SIMD4<Float> }
-                var fv = FV(params: SIMD4<Float>(envNum("fogVolumeIntensity", 0), nearD, farD, 0))
-                fenc.setRenderPipelineState(fogPipe)
-                fenc.setDepthStencilState(depthState)
-                fenc.setCullMode(.none)
-                fenc.setVertexBuffer(beamoVB, offset: 0, index: 0)
-                fenc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
-                fenc.setFragmentBytes(&fv, length: MemoryLayout<FV>.stride, index: 1)
-                for b in bm where b.start < b.count + b.start {
-                    fenc.drawIndexedPrimitives(type: .triangle, indexCount: b.count, indexType: .uint32,
-                                               indexBuffer: beamoIB, indexBufferOffset: b.start * 4)
-                }
-                fenc.endEncoding()
-            }
+        /// 雾合成（原版单帧跑两遍：第一遍用上一帧亮度，第二遍用本帧新算出的亮度）
+        func runFogUpsample(_ cbX: MTLCommandBuffer, _ avgLum: Float) {
+            guard let fogUpsamplePipe, let fogTex, let fogOut else { return }
             let up = MTLRenderPassDescriptor()
             up.colorAttachments[0].texture = fogOut
             up.colorAttachments[0].loadAction = .dontCare
             up.colorAttachments[0].storeAction = .store
-            if let uenc = cb.makeRenderCommandEncoder(descriptor: up) {
+            if let uenc = cbX.makeRenderCommandEncoder(descriptor: up) {
                 // Scene.metal 的 fogUpsampleFS 把常量声明成 `constant FU &u [[constant buffer(1)]]`，
                 // FU 是 12 个 float4 的自建结构。之前把 PerFrame(1584B) 绑到 index 2，shader 却从 buffer(1)
                 // 读 16B 的 viewport → 所有雾参数为 0 → 输出恒 1/(1+0)=1.0 → tonemap 反解成 0（整屏黑）。
@@ -1021,7 +999,7 @@ final class MetalRenderer {
                                atmSunColor: sunV,
                                earthPosRad: SIMD4<Float>(0, 0, 0, 0),
                                viewportSize: SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h)),
-                               averageLum: SIMD4<Float>(averageLum, 0, 0, 0))
+                               averageLum: SIMD4<Float>(avgLum, 0, 0, 0))
                 uenc.setRenderPipelineState(fogUpsamplePipe)
                 uenc.setFragmentBytes(&fogObj, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
                 uenc.setFragmentBytes(&fogF, length: MemoryLayout<FUF>.stride, index: 1)
@@ -1036,13 +1014,43 @@ final class MetalRenderer {
             }
         }
 
+        // Pass 3：FogVolume → Pass 4：FogUpsample
+        if let fogPipe, let fogUpsamplePipe, let fogTex, let fogOut {
+            let fp = MTLRenderPassDescriptor()
+            fp.colorAttachments[0].texture = fogTex
+            fp.colorAttachments[0].loadAction = .clear
+            fp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            fp.colorAttachments[0].storeAction = .store
+            fp.depthAttachment.texture = depthTex
+            fp.depthAttachment.loadAction = .load
+            fp.depthAttachment.storeAction = .dontCare
+            if let fenc = cb.makeRenderCommandEncoder(descriptor: fp), let beamoVB, let beamoIB, let bm = man.beamos {
+                struct FV { var params: SIMD4<Float> }
+                var fv = FV(params: SIMD4<Float>(envNum("fogVolumeIntensity", 0), nearD, farD, 0))
+                fenc.setRenderPipelineState(fogPipe)
+                fenc.setDepthStencilState(depthState)
+                fenc.setCullMode(.none)
+                fenc.setVertexBuffer(beamoVB, offset: 0, index: 0)
+                fenc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
+                fenc.setFragmentBytes(&fv, length: MemoryLayout<FV>.stride, index: 1)
+                for b in bm where b.start < b.count + b.start {
+                    fenc.drawIndexedPrimitives(type: .triangle, indexCount: b.count, indexType: .uint32,
+                                               indexBuffer: beamoIB, indexBufferOffset: b.start * 4)
+                }
+                fenc.endEncoding()
+            }
+            runFogUpsample(cb, averageLum)
+        }
+
+        /// 后处理：Tonemap → Fxaa → drawable（在读画面第二遍雾之后跑）
+        func runPost(_ cbX: MTLCommandBuffer) {
         // Pass 5：Tonemap（原版 Tonemap0.frag：HDR 反解 + bloom + 曝光 + 暗角 + 输出曲线）
-        if let tonemapPipe {
+        if let tonemapPipe, let ldrTex {
             let tp = MTLRenderPassDescriptor()
             tp.colorAttachments[0].texture = ldrTex
             tp.colorAttachments[0].loadAction = .dontCare
             tp.colorAttachments[0].storeAction = .store
-            if let tenc = cb.makeRenderCommandEncoder(descriptor: tp) {
+            if let tenc = cbX.makeRenderCommandEncoder(descriptor: tp) {
                 struct TUni { var bloomTint: SIMD4<Float>; var bloomParams: SIMD4<Float>
                               var viewportSize: SIMD4<Float>; var exposure: SIMD4<Float> }
                 var tu = TUni(bloomTint: envColor("bloomTint", SIMD3<Float>(1, 1, 1)),
@@ -1052,19 +1060,19 @@ final class MetalRenderer {
                 tenc.setRenderPipelineState(tonemapPipe)
                 tenc.setFragmentBytes(&tu, length: MemoryLayout<TUni>.stride, index: 1)
                 if frameIdx == 0 { Boot.log("调试：雾后处理旁路 debugSkipFogPost=\(debugSkipFogPost)（tonemap 直读 sceneTex2）") }
-                tenc.setFragmentTexture((fogPipe != nil && fogOut != nil && !debugSkipFogPost) ? fogOut! : sceneTex2, index: 0)
+                tenc.setFragmentTexture((fogOut != nil && !debugSkipFogPost) ? fogOut! : sceneTex2, index: 0)
                 tenc.setFragmentTexture(blackTex ?? fallbackTex, index: 1)
                 tenc.setFragmentSamplerState(clampSampler, index: 0)
                 tenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                 tenc.endEncoding()
             }
             // Pass 6：Fxaa0.frag
-            if let fxaaPipe, let ldrTex {
+            if let fxaaPipe {
                 let xp = MTLRenderPassDescriptor()
                 xp.colorAttachments[0].texture = drawable.texture
                 xp.colorAttachments[0].loadAction = .dontCare
                 xp.colorAttachments[0].storeAction = .store
-                if let xenc = cb.makeRenderCommandEncoder(descriptor: xp) {
+                if let xenc = cbX.makeRenderCommandEncoder(descriptor: xp) {
                     struct FX { var params: SIMD4<Float> }
                     var fx = FX(params: SIMD4<Float>(Float(w), Float(h), 0, 0))
                     xenc.setRenderPipelineState(fxaaPipe)
@@ -1076,13 +1084,25 @@ final class MetalRenderer {
                 }
             }
         }
-        cb.present(drawable)
+        }
+
         cb.commit()
-        // 原版视线自适应：用上一帧 FogUpsample 输出的几何平均亮度做 u_averageLum
+        cb.waitUntilCompleted()
+        // 原版（server.cjs 同样）：单帧内先出一遍雾、读回算几何平均亮度，再用新亮度重出一遍雾，才进 tonemap。
+        // 之前只跑一遍且用上一帧亮度，亮度会在两档之间来回跳，截图一会儿黑一会儿白。
         if let fogOut {
-            cb.waitUntilCompleted()
             let l = averageLuminance(of: fogOut)
             if l > 0, l.isFinite { averageLum = l }
+            if frameIdx <= 6 { Boot.log("平均亮度 f\(frameIdx)=\(l)（第二遍雾用这个）") }
+        }
+        if let cb2 = queue.makeCommandBuffer() {
+            runFogUpsample(cb2, averageLum)
+            runPost(cb2)
+            cb2.present(drawable)
+            cb2.commit()
+        }
+        // 探针（亮度已在上面的两遍雾里算过）
+        if let fogOut {
             if frameIdx <= 6 {
                 Boot.log("探针 f\(frameIdx) 地面75%: 地形=\(probeHalf(sceneTex, 0.5, 0.75)) 雾后=\(probeHalf(fogOut, 0.5, 0.75)) | 天空10%: 地形=\(probeHalf(sceneTex, 0.5, 0.1))")
                 Boot.log("帧体检 f\(frameIdx) cb=\(cb.status.rawValue) err=\(String(describing: cb.error)) 存储=\(sceneTex.storageMode.rawValue)/\(fogOut.storageMode.rawValue) 尺寸=\(sceneTex.width)×\(sceneTex.height)")

@@ -52,7 +52,9 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
         view3d = MetalView(frame: view.bounds, device: MTLCreateSystemDefaultDevice())
         view3d.translatesAutoresizingMaskIntoConstraints = false
-        view3d.colorPixelFormat = .bgra8Unorm
+        // 原版 Tonemap 输出是线性值，编辑器在回读时手动做 linear→sRGB；
+        // 这里用 sRGB drawable 让硬件完成同一转换，否则画面会整体压暗（gamma 2.2）
+        view3d.colorPixelFormat = .bgra8Unorm_srgb
         view3d.depthStencilPixelFormat = .invalid
         view3d.framebufferOnly = false
         view3d.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
