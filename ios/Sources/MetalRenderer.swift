@@ -243,6 +243,7 @@ final class MetalRenderer {
     private var probeCube: MTLTexture?
     private var fallbackTex: MTLTexture?
     private var texCache: [String: MTLTexture] = [:]
+    private var terrain: TerrainPass?
     // 32×16 屏幕光簇（原版 Mesh2243.frag 的 u_light* 通道）
     private var countsTex: MTLTexture?
     private var offsetsTex: MTLTexture?
@@ -301,6 +302,7 @@ final class MetalRenderer {
               let wvs = library.makeFunction(name: "waterVS"), let wfs = library.makeFunction(name: "waterFS")
         else { Boot.log("shader 函数缺失"); return nil }
         Boot.log("shader 函数就绪")
+        terrain = TerrainPass(device: device)
 
         let vd = MTLVertexDescriptor()
         // 原版顶点：pos | nrm | a_color | a_uv0(vec4) | a_uv1(vec4) | light0 | light1 | light2 = 72 B
@@ -729,6 +731,15 @@ final class MetalRenderer {
             enc.setFragmentTexture(colTex, index: 7)
         }
             // SkyDomeFade 穹顶：PerObject 块 = AmbienceSky 的色彩 + 引擎默认（数值见 docs/ir 的 IR）
+            var skyF = PerFrameUniforms()
+            skyF.u_viewProjInv = mat4(simd_inverse(vp))
+            skyF.u_eyePos = t3(eye)
+            skyF.u_time = Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000))
+            skyF.u_sunDir = t3(sunDir)
+            skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
+            skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
+            var skyP = PerPassUniforms()
+            skyP.u_viewportSize = (Float(w), Float(h), 1 / Float(w), 1 / Float(h))
             if let domePipe {
                 var sky = PerObjectUniforms()
                 sky.u_skyColor = t3p(envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)))
@@ -756,16 +767,6 @@ final class MetalRenderer {
                 sky.u_cloudPatchiness = envNum("cloudPatchiness", 0)
                 sky.u_skyFadeOut = envNum("skyFadeOut", 0)
 
-                var skyF = PerFrameUniforms()
-                skyF.u_viewProjInv = mat4(simd_inverse(vp))
-                skyF.u_eyePos = t3(eye)
-                skyF.u_time = Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000))
-                skyF.u_sunDir = t3(sunDir)
-                skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
-                skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
-
-                var skyP = PerPassUniforms()
-                skyP.u_viewportSize = (Float(w), Float(h), 1 / Float(w), 1 / Float(h))
             enc.setRenderPipelineState(domePipe)
             enc.setFragmentBytes(&sky, length: MemoryLayout<PerObjectUniforms>.stride, index: 2)
             enc.setFragmentBytes(&skyF, length: MemoryLayout<PerFrameUniforms>.stride, index: 3)
@@ -774,6 +775,11 @@ final class MetalRenderer {
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             enc.setRenderPipelineState(meshPipe)
         }
+        if let terrain {
+            var pf = skyF
+            terrain.encode(enc, perFrame: &pf, perPass: SIMD4<Float>(skyP.u_viewportSize.0, skyP.u_viewportSize.1, 1 / Float(w), 1 / Float(h)))
+            enc.setRenderPipelineState(meshPipe)
+        } else {
         for r in man.ranges where r.name.lowercased() != "plane" {
             let c = SIMD4<Float>(r.color.count >= 3 ? r.color[0] : 1, r.color.count >= 3 ? r.color[1] : 1, r.color.count >= 3 ? r.color[2] : 1, 1)
             if let n = r.texture, let t = tex(n) { enc.setFragmentTexture(t, index: 0) } else { enc.setFragmentTexture(fallbackTex, index: 0) }
@@ -792,6 +798,7 @@ final class MetalRenderer {
             enc.setFragmentBytes(&prm, length: MemoryLayout<SIMD4<Float>>.stride, index: 4)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                       indexBuffer: ibuf, indexBufferOffset: r.start * 4)
+        }
         }
         enc.endEncoding()
 
