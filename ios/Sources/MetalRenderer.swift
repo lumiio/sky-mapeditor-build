@@ -926,8 +926,10 @@ final class MetalRenderer {
                 var fogF = skyF
                 fogF.u_fogDensityHeightDist = (envNum("fogDensity", 1), envNum("fogHeight", 0.1), envNum("drawDistance", 15000))
                 fogF.u_atmosphereDensity = envNum("atmosphereDensity", 1)
-                fogF.u_averageSkyboxColor = envColor4("tintTop", SIMD4<Float>(0.0216, 0.0928, 0.3301, 1))
-                fogF.u_atmosphereSunColor = envColor4("sunColor", SIMD4<Float>(0.0825, 0.1882, 0.7490, 1))
+                let tintTopV = envColor4("tintTop", SIMD4<Float>(0.0216, 0.0928, 0.3301, 1))
+                fogF.u_averageSkyboxColor = (tintTopV.x, tintTopV.y, tintTopV.z, tintTopV.w)
+                let sunV = envColor4("sunColor", SIMD4<Float>(0.0825, 0.1882, 0.7490, 1))
+                fogF.u_atmosphereSunColor = (sunV.x, sunV.y, sunV.z, sunV.w)
                 fogF.u_earthPosRad = (0, 0, 0, 0)
                 fogF.u_camNearPlane = (nearD, farD, 0, 0)
                 uenc.setRenderPipelineState(fogUpsamplePipe)
