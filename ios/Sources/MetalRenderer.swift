@@ -806,6 +806,7 @@ final class MetalRenderer {
             dome.encode(enc, eye: eye, radiusScale: farD * 0.9,
                         perObject: &sky, perFrame: &skyF, perPass: &skyP)
             enc.setRenderPipelineState(meshPipe)     // 恢复主 mesh 管线给地形用
+            enc.setDepthStencilState(depthState)     // 穹顶用的是 always/no-write，这里恢复主 pass 的 depth 状态
         }
 
         // 原版地形片元读取的 PerFrame 字段：u_camMat@480 / u_lightShadowConsts@560 / u_eyePos@608 / u_sunDir@880 / u_sunColor@912 / u_pointLight@1184
