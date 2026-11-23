@@ -796,7 +796,7 @@ final class MetalRenderer {
         if let terrain {
             var pf = skyF
             pf.u_camMat = mat4(viewM)
-            pf.u_lightShadowConsts = (0, 0, 1, 0)
+            pf.u_lightShadowConsts = (0.01, 0.01, 0.01, 0.01) // 引擎构造函数里直接存 0x3c23d70a=0.01 到 4 个分量
             pf.u_pointLight = (plC.x * plK, plC.y * plK, plC.z * plK, 0)
             terrain.encode(enc, perFrame: &pf, perPass: SIMD4<Float>(skyP.u_viewportSize.0, skyP.u_viewportSize.1, 1 / Float(w), 1 / Float(h)))
             enc.setRenderPipelineState(meshPipe)

@@ -150,17 +150,18 @@ final class TerrainPass {
         // 表头：(簇号, 512-簇号, count, 0)；PR 条目：(光世界位置 xyz, w=半径²)；CS 条目：(光颜色 xyz, w=0)
         // 片元第 1 段取 ratio = clamp(PR.w / d²) (CS.w=0 时该式成立)，第 2 段用 CS.x 作遮蔽系数
         func makeLightAtlas(_ lights: [(pos: SIMD3<Float>, radius: Float, color: SIMD3<Float>)]) -> (MTLTexture?, MTLTexture?)? {
-            // 原版取法：read_texture_2d 坐标 = (x=行, y=簇号)，所以 width=129 行、height=512 簇
-            let w = 129, h = 512
-            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: w, height: h, mipmapped: false)
+            // 引擎 0x1009e8578 实参：宽 128、高 512、每像素 8 B（RGBA16F），5×128×512×8=0x80000
+            // 行 0 = 表头，行 1..127 = 最多 127 条光源（shader 里 clamp 到 128 只是上界）
+            let w = 128, h = 512
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
             td.usage = .shaderRead
             guard let pr = device.makeTexture(descriptor: td), let cs = device.makeTexture(descriptor: td) else { return nil }
-            var prData = [Float](repeating: 0, count: w * h * 4)
-            var csData = [Float](repeating: 0, count: w * h * 4)
-            let n = min(lights.count, 128)
-            func put(_ arr: inout [Float], _ x: Int, _ y: Int, _ v: SIMD4<Float>) {
-                let i = (y * 129 + x) * 4
-                arr[i] = v.x; arr[i + 1] = v.y; arr[i + 2] = v.z; arr[i + 3] = v.w
+            var prData = [Float16](repeating: 0, count: w * h * 4)
+            var csData = [Float16](repeating: 0, count: w * h * 4)
+            let n = min(lights.count, 127)
+            func put(_ arr: inout [Float16], _ x: Int, _ y: Int, _ v: SIMD4<Float>) {
+                let i = (y * 128 + x) * 4
+                arr[i] = Float16(v.x); arr[i + 1] = Float16(v.y); arr[i + 2] = Float16(v.z); arr[i + 3] = Float16(v.w)
             }
             for c in 0..<h {
                 let hdr = SIMD4<Float>(Float(c), Float(512 - c), Float(n), 0)
@@ -172,9 +173,9 @@ final class TerrainPass {
                 }
             }
             prData.withUnsafeBytes { pr.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0,
-                                               withBytes: $0.baseAddress!, bytesPerRow: w * 16) }
+                                               withBytes: $0.baseAddress!, bytesPerRow: w * 8) }
             csData.withUnsafeBytes { cs.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0,
-                                               withBytes: $0.baseAddress!, bytesPerRow: w * 16) }
+                                               withBytes: $0.baseAddress!, bytesPerRow: w * 8) }
             return (pr, cs)
         }
 
