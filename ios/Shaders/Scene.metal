@@ -4656,8 +4656,8 @@ fragment float4 domeFadeFS(DomeOut in [[stage_in]],
   float t4084 = (t4081 * t4083);
   float t4085 = (1.000000e+00 - t4084);
   float t4086 = (t4085 * 6.000000e+00);
-  float t4087 = (t4085 * undef);
-  float t4088 = (t4085 * undef);
+  float t4087 = (t4085 * 0.0);
+  float t4088 = (t4085 * 0.0);
   float t4089 = (-0.0 - t4073);
   float t4090 = (t4073 * t4089);
   float t4091 = (t4075 * 6.30000019);
