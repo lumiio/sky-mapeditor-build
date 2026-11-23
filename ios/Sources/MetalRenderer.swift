@@ -985,23 +985,39 @@ final class MetalRenderer {
             up.colorAttachments[0].loadAction = .dontCare
             up.colorAttachments[0].storeAction = .store
             if let uenc = cb.makeRenderCommandEncoder(descriptor: up) {
-                // FogUpsample 的 air 布局（IR 签名）：buf0=16B（未用）、buf1=PerObject 16B（抖动偏移）、buf2=PerFrame 1584B
+                // Scene.metal 的 fogUpsampleFS 声明是 `constant FU &u [[constant buffer(1)]]`，
+                // FU 是 12 个 float4 的自建结构，不是 PerFrame 1584B 的裁剪视图。
+                // 之前按 IR 的「buf2=PerFrame」把 PerFrame 绑到 index 2，shader 却从 buffer(1) 读，
+                // 实际读到的是 16B 的 viewport → u_averageLum 等全 0，雾合成被 1e-4 兜底压到 0.001（整屏黑）。
+                // 这里按 FU 字段顺序逐项映射原版 PerFrame 的值，绑到 shader 真正读取的 buffer(1)。
+                struct FUF {
+                    var eyePos: SIMD4<Float>; var sunDir: SIMD4<Float>
+                    var sunColor: SIMD4<Float>; var sunSize: SIMD4<Float>
+                    var fogDensityHeightDist: SIMD4<Float>; var atmosphereDensity: SIMD4<Float>
+                    var atmosphereSample: SIMD4<Float>; var avgSkyboxColor: SIMD4<Float>
+                    var atmSunColor: SIMD4<Float>; var earthPosRad: SIMD4<Float>
+                    var viewportSize: SIMD4<Float>; var averageLum: SIMD4<Float>
+                }
                 var fogObj = SIMD4<Float>(0, 0, 0, 0)
-                var fogF = skyF
-                fogF.u_fogDensityHeightDist = (envNum("fogDensity", 1), envNum("fogHeight", 0.1), envNum("drawDistance", 15000))
-                fogF.u_atmosphereDensity = envNum("atmosphereDensity", 1)
                 let tintTopV = envColor4("tintTop", SIMD4<Float>(0.0216, 0.0928, 0.3301, 1))
-                fogF.u_averageSkyboxColor = (tintTopV.x, tintTopV.y, tintTopV.z, tintTopV.w)
                 let sunV = envColor4("sunColor", SIMD4<Float>(0.0825, 0.1882, 0.7490, 1))
-                fogF.u_atmosphereSunColor = (sunV.x, sunV.y, sunV.z, sunV.w)
-                fogF.u_earthPosRad = (0, 0, 0, 0)
-                fogF.u_camNearPlane = (nearD, farD, 0, 0)
+                let ssz = skyF.u_sunSizeIntMoonPhase
+                var fogF = FUF(eyePos: u.eyePos,
+                               sunDir: u.sunDir,
+                               sunColor: u.sunColor,
+                               sunSize: SIMD4<Float>(ssz.0, ssz.1, ssz.2, ssz.3),
+                               fogDensityHeightDist: SIMD4<Float>(envNum("fogDensity", 1), envNum("fogHeight", 0.1), envNum("drawDistance", 15000), 1),
+                               atmosphereDensity: SIMD4<Float>(envNum("atmosphereDensity", 1), 0, 0, 0),
+                               atmosphereSample: SIMD4<Float>(0, 0, 0, 0),
+                               avgSkyboxColor: tintTopV,
+                               atmSunColor: sunV,
+                               earthPosRad: SIMD4<Float>(0, 0, 0, 0),
+                               viewportSize: SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h)),
+                               averageLum: SIMD4<Float>(averageLum, 0, 0, 0))
                 uenc.setRenderPipelineState(fogUpsamplePipe)
-                // FogUpsample 的 air 绑定（IR location_index）：0=PerObject 16B、1=PerPass 16B(u_viewportSize)、2=PerFrame 1584B
-                var fogPass = SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h))
-                uenc.setFragmentBytes(&fogObj, length: 16, index: 0)
-                uenc.setFragmentBytes(&fogPass, length: 16, index: 1)
-                uenc.setFragmentBytes(&fogF, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
+                // 与 MSL 的 buffer(1) 对齐；buffer(0) 保持原版 PerObject 16B（抖动偏移，本关为 0）
+                uenc.setFragmentBytes(&fogObj, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
+                uenc.setFragmentBytes(&fogF, length: MemoryLayout<FUF>.stride, index: 1)
                 uenc.setFragmentTexture(sceneTex2, index: 0)
                 uenc.setFragmentTexture(fogTex, index: 2)
                 uenc.setFragmentTexture(fallbackTex, index: 3)

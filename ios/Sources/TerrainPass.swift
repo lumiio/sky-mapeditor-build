@@ -70,6 +70,7 @@ final class TerrainPass {
     private var vbuf: MTLBuffer?
     private var ibuf: MTLBuffer?
     private var meta: TerrainMeta?
+    private var diagLogged = false
     private var groups: [String: [TerrainRangeMeta]] = [:]   // key = "<shader>/<material>"
     private var pipes: [String: MTLRenderPipelineState] = [:] // key = shader
     private var objBufs: [String: MTLBuffer] = [:]            // key = shader
@@ -345,6 +346,31 @@ final class TerrainPass {
 
     func encode(_ enc: MTLRenderCommandEncoder, perFrame: inout PerFrameUniforms, perPass: SIMD4<Float>) {
         guard let vbuf, let ibuf, let depth, let sampler, !groups.isEmpty else { return }
+        if !diagLogged, let meta {
+            diagLogged = true
+            // 真机自检：用本帧真正下发的 u_viewProj 把前 2000 个顶点投一遍，
+            // 在屏率为 0 就说明矩阵/顶点布局错位（而不是"画了但被雾压黑"）。
+            let cols = perFrame.u_viewProj
+            let vpM = simd_float4x4(columns: (SIMD4<Float>(cols.0, cols.1, cols.2, cols.3),
+                                             SIMD4<Float>(cols.4, cols.5, cols.6, cols.7),
+                                             SIMD4<Float>(cols.8, cols.9, cols.10, cols.11),
+                                             SIMD4<Float>(cols.12, cols.13, cols.14, cols.15)))
+            let p = vbuf.contents().bindMemory(to: Float.self, capacity: meta.vertexCount * 9)
+            var inView = 0, n = 0
+            var zLo: Float = 9, zHi: Float = -9
+            for i in 0..<min(meta.vertexCount, 2000) {
+                let base = i * 9
+                let c = vpM * SIMD4<Float>(p[base], p[base + 1], p[base + 2], 1)
+                n += 1
+                guard c.w > 0 else { continue }
+                let x = c.x / c.w, y = c.y / c.w, z = c.z / c.w
+                if abs(x) <= 1, abs(y) <= 1, z >= 0, z <= 1 { inView += 1 }
+                zLo = min(zLo, z); zHi = max(zHi, z)
+            }
+            let draws = groups.values.reduce(0) { $0 + $1.count }
+            let tris = groups.values.reduce(0) { $0 + $1.reduce(0) { $0 + $1.count } } / 3
+            Boot.log("地形自检 顶点=\(meta.vertexCount) 索引=\(meta.indexCount) 组=\(groups.count) 管线=\(pipes.count) draw=\(draws) tri=\(tris) 采样=\(n) 在屏=\(inView) ndcz=[\(String(format: "%.3f", zLo)),\(String(format: "%.3f", zHi))]")
+        }
         enc.setDepthStencilState(depth)
         enc.setVertexBuffer(vbuf, offset: 0, index: 1)
         enc.setVertexBytes(&perFrame, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
