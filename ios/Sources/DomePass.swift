@@ -59,31 +59,25 @@ final class DomePass {
         }
         vc = Int(bin.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) })
         ic = Int(bin.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt32.self) })
-        let posBytes = vc * 12, nrmBytes = vc * 12, colBytes = vc * 4, uvBytes = vc * 16, idxBytes = ic * 4
+        let posBytes = vc * 12, nrmBytes = vc * 12, colBytes = vc * 4, uvBytes = vc * 32, idxBytes = ic * 4
         guard vc > 0, ic > 0, bin.count == 8 + posBytes + nrmBytes + colBytes + uvBytes + idxBytes else {
             Boot.log("穹顶: 网格尺寸不符 vc=\(vc) ic=\(ic) bytes=\(bin.count)")
             return nil
         }
-        // 把 color/uv 合到一条 stride=20 的缓冲，符合原版 5 路顶点输入的语义
-        var interleaved = [UInt8](repeating: 0, count: vc * 20)
+        // 把 color/uv 合到一条 stride=36 的缓冲：color uchar4 @0 / uv0 float4 @4 / uv1 float4 @20
+        var interleaved = [UInt8](repeating: 0, count: vc * 36)
         bin.withUnsafeBytes { raw in
             let p = raw.baseAddress!
             memcpy(&interleaved[0], p.advanced(by: 8 + posBytes + nrmBytes), vc * 4)
-            for i in 0..<vc {
-                // uv 块 16 B = 8 个 half；前 4 个 = uv0，后 4 个 = uv1
-                let src = p.advanced(by: 8 + posBytes + nrmBytes + colBytes + i * 16)
-                for k in 0..<8 {
-                    interleaved[i * 20 + 4 + k * 2] = src.advanced(by: k * 2).load(as: UInt8.self)
-                    interleaved[i * 20 + 4 + k * 2 + 1] = src.advanced(by: k * 2 + 1).load(as: UInt8.self)
-                }
-            }
+            memcpy(&interleaved[4], p.advanced(by: 8 + posBytes + nrmBytes + colBytes), vc * 32)
+            _ = p
         }
         func buf(_ base: UnsafeRawPointer, _ n: Int) -> MTLBuffer? {
             device.makeBuffer(bytes: base, length: max(n, 1), options: .storageModeShared)
         }
         vpos = bin.withUnsafeBytes { buf($0.baseAddress!.advanced(by: 8), posBytes) }
         vnrm = bin.withUnsafeBytes { buf($0.baseAddress!.advanced(by: 8 + posBytes), nrmBytes) }
-        vcuv = interleaved.withUnsafeBytes { buf($0.baseAddress!, vc * 20) }
+        vcuv = interleaved.withUnsafeBytes { buf($0.baseAddress!, vc * 36) }
         ibuf = bin.withUnsafeBytes { buf($0.baseAddress!.advanced(by: 8 + posBytes + nrmBytes + colBytes + uvBytes), idxBytes) }
 
         let vd = MTLVertexDescriptor()
@@ -94,10 +88,10 @@ final class DomePass {
         vd.attributes[2].format = .float3; vd.attributes[2].offset = 0; vd.attributes[2].bufferIndex = 4
         vd.layouts[4].stride = 12; vd.layouts[4].stepFunction = .perVertex
         // 1 a_color / 3 a_uv0 / 4 a_uv1
-        vd.attributes[1].format = .uchar4; vd.attributes[1].offset = 0; vd.attributes[1].bufferIndex = 5
-        vd.attributes[3].format = .half4; vd.attributes[3].offset = 4; vd.attributes[3].bufferIndex = 5
-        vd.attributes[4].format = .half4; vd.attributes[4].offset = 12; vd.attributes[4].bufferIndex = 5
-        vd.layouts[5].stride = 20; vd.layouts[5].stepFunction = .perVertex
+        vd.attributes[1].format = .uchar4Normalized; vd.attributes[1].offset = 0; vd.attributes[1].bufferIndex = 5
+        vd.attributes[3].format = .float4; vd.attributes[3].offset = 4; vd.attributes[3].bufferIndex = 5
+        vd.attributes[4].format = .float4; vd.attributes[4].offset = 20; vd.attributes[4].bufferIndex = 5
+        vd.layouts[5].stride = 36; vd.layouts[5].stepFunction = .perVertex
 
         let pd = MTLRenderPipelineDescriptor()
         pd.vertexFunction = vsFn

@@ -15,7 +15,7 @@ def main(assets):
     binp = os.path.join(assets, "UnitSphere.dome.bin")
     raw = open(binp, "rb").read()
     vc, ic = struct.unpack_from("<II", raw, 0)
-    expect = 8 + vc * 12 + vc * 12 + vc * 4 + vc * 16 + ic * 4
+    expect = 8 + vc * 12 + vc * 12 + vc * 4 + vc * 32 + ic * 4
     print(f"dome.bin vc={vc} ic={ic} bytes={len(raw)} expect={expect}")
     if len(raw) != expect or vc <= 0 or ic % 3 != 0:
         print("FAIL: 网格尺寸/索引数不符"); ok = False
