@@ -811,6 +811,11 @@ final class MetalRenderer {
         Boot.log("PerFrame 偏移 camMat=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_camMat) ?? -1) eyePos=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_eyePos) ?? -1) sunDir=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunDir) ?? -1) sunColor=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunColor) ?? -1) pointLight=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_pointLight) ?? -1) size=\(MemoryLayout<PerFrameUniforms>.stride)")
         if let terrain {
             var pf = skyF
+            // 地形 vs 用的 PerFrame 字段（按 GrassShMesh/SandShMeshDecal/RockFaceSh/RockFaceRainSh/CloudSh 的 vs IR 核对）：
+            // i32 8 = 第 3 个矩阵 @224 = u_viewProj；i32 97 @1492 = 单个 float。之前只填了 u_camMat，u_viewProj 是 0 → 顶点全被剪掉
+            pf.u_view = mat4(viewM)
+            pf.u_proj = mat4(proj)
+            pf.u_viewProj = mat4(vp)
             pf.u_camMat = mat4(viewM)
             pf.u_lightShadowConsts = (0.01, 0.01, 0.01, 0.01) // 引擎构造函数里直接存 0x3c23d70a=0.01 到 4 个分量
             pf.u_pointLight = (plC.x * plK, plC.y * plK, plC.z * plK, 0)

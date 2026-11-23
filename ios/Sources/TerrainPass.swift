@@ -297,10 +297,13 @@ final class TerrainPass {
             guard let fam = FAMILIES.first(where: { $0.shader == shader }) else { continue }
             let def = mats[matId]
 
-            // PerObject：颜色/uvScale/metalness 取原版材质表；缺失则白/1/0
+            // PerObject：u_model 单位矩阵（关卡顶点本来就是世界坐标，原版整关是一个 draw 批次、model=identity）；
+            // 颜色/uvScale/metalness 取原版材质表；缺失则白/1/0
             var obj = [UInt8](repeating: 0, count: fam.objSize)
             obj.withUnsafeMutableBytes { raw in
                 let f = raw.bindMemory(to: Float.self)
+                // 矩阵按列主序存：col0=(1,0,0,0) col1=(0,1,0,0) col2=(0,0,1,0) col3=(0,0,0,1)
+                f[0] = 1; f[5] = 1; f[10] = 1; f[15] = 1
                 let o = fam.colorOffset / 4
                 let c = def?.color ?? [1, 1, 1]
                 f[o] = c.count > 0 ? c[0] : 1
