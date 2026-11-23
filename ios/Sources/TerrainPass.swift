@@ -82,9 +82,11 @@ final class TerrainPass {
         }
         Boot.log("原版 GrassShMesh metallib 已加载")
 
+        // 顶点布局来自 GEO0（LevelGeoMeshVertex 36B）：pos@0 / normal@12(SNORM) / material@16 / weight@20 / input2@24 / input3@28 / input4@32
+        // 属性语义由 vs IR 反推：loc2 a_light0=in2、loc3 a_light1=in3、loc4 a_light2=in4、loc5 a_color.w=weight0
         let vd = MTLVertexDescriptor()
         vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 1
-        vd.attributes[1].format = .uchar4Normalized; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 1
+        vd.attributes[1].format = .char4Normalized; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 1
         vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 1
         vd.attributes[3].format = .uchar4Normalized; vd.attributes[3].offset = 28; vd.attributes[3].bufferIndex = 1
         vd.attributes[4].format = .uchar4Normalized; vd.attributes[4].offset = 32; vd.attributes[4].bufferIndex = 1
