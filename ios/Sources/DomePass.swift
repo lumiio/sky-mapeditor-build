@@ -44,8 +44,9 @@ final class DomePass {
             Boot.log("穹顶: 原版 metallib 缺失")
             return nil
         }
-        guard let vsLib = try? device.makeLibrary(data: vsData),
-              let fsLib = try? device.makeLibrary(data: fsData),
+        func dispatch(_ d: Data) -> DispatchData { d.withUnsafeBytes { DispatchData(bytes: $0) } }
+        guard let vsLib = try? device.makeLibrary(data: dispatch(vsData)),
+              let fsLib = try? device.makeLibrary(data: dispatch(fsData)),
               let vsFn = vsLib.makeFunction(name: "vsmain"),
               let fsFn = fsLib.makeFunction(name: "fsmain") else {
             Boot.log("穹顶: metallib 载入/函数解析失败")

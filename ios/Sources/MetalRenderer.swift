@@ -772,19 +772,18 @@ final class MetalRenderer {
         skyF.u_viewProj = mat4(vp)
         skyF.u_viewProjInv = mat4(simd_inverse(vp))
         // EnvNode 的 26 个字段（TGCL 原值），缺字段时保留引擎构造默认
-        sky.u_skyColor = envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017))
-        sky.u_horizonColor = SIMD3<Float>(envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)).x,
-                                          envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)).y,
-                                          envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)).z)
+        let tintTopV = envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017))
+        sky.u_skyColor = (tintTopV.x, tintTopV.y, tintTopV.z, 1)
+        let tintBotV = envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0))
+        sky.u_horizonColor = (tintBotV.x, tintBotV.y, tintBotV.z)
         sky.u_horizonFalloff = envNum("horizonFalloff", 0)
         sky.u_skyBrightness = envNum("skyBrightness", 1)
         sky.u_useEnvSun = 1
         sky.u_sunAngles = (envNum("sunAngleXZ", 180), envNum("sunAngleY", 40))
         sky.u_sunSize = envNum("sunSize", 0)
         sky.u_sunInt = envNum("sunInt", 1)
-        sky.u_sunTint = SIMD3<Float>(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)).x,
-                                     envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)).y,
-                                     envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)).z)
+        let sunTintV = envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293))
+        sky.u_sunTint = (sunTintV.x, sunTintV.y, sunTintV.z)
         sky.u_sunGlow = envNum("sunGlow", 0)
         sky.u_highCloudSpeed = (envNum("highCloudSpeedX", 0), envNum("highCloudSpeedY", 0))
         sky.u_highCloudHeight = envNum("highCloudHeight", 0)
@@ -796,9 +795,8 @@ final class MetalRenderer {
         sky.u_lowCloudSize = envNum("lowCloudSize", 0)
         sky.u_lowCloudDensity = envNum("lowCloudDensity", 0)
         sky.u_lowCloudOpacity = envNum("lowCloudOpacity", 0)
-        sky.u_cloudColor = SIMD3<Float>(envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)).x,
-                                        envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)).y,
-                                        envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)).z)
+        let cloudColV = envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17))
+        sky.u_cloudColor = (cloudColV.x, cloudColV.y, cloudColV.z)
         sky.u_cloudAbsorption = envNum("cloudAbsorption", 0)
         sky.u_cloudPatchiness = envNum("cloudPatchiness", 0)
         sky.u_skyFadeOut = 1     // 1 = 正常显示（0 会把整块穹顶淡成黑）
