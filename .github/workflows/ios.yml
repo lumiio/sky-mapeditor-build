@@ -52,6 +52,26 @@ jobs:
           path: out/SkyMapEditor-unsigned.ipa
 
 
+  # 几何自测：不依赖真机/模拟器，用 App 里同一套相机参数把 <level>.terrain.bin 投影+光栅一遍。
+  # 判据：进屏顶点占比与屏幕覆盖率都 ≥5%，否则说明"相机对着空气"，拦下不许出货。
+  geo-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: pip3 install --quiet numpy pillow
+      - name: Project every level with the app camera
+        run: |
+          set -e
+          for L in CandleSpace Prairie_ButterflyFields Prairie_Village Dawn_TrialsEarth Night_JarCave; do
+            python3 qa/geo_preview.py native/Assets "$L" "/tmp/qa-$L.png"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-geo-previews
+          path: /tmp/qa-*.png
+
   # 出货前自测：把同一个工程编到 iOS 模拟器里真跑一遍，读 App 自己写的 boot.log 探针，
   # 只要"地面75%/天空10%"两处像素还等于 clearColor(0.030,0.050,0.090)，就判定"一帧都没画上去"，直接失败不让出货。
   sim-qa:
