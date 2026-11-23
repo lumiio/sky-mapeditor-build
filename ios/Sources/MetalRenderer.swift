@@ -273,6 +273,7 @@ final class MetalRenderer {
 
     /// 原版 u_averageSkyColor：由引擎对天空盒做均值得到，这里用「把穹顶渲进 32×32 再读回求均值」复现
     var averageSky = SIMD3<Float>(0.05, 0.09, 0.16)
+    private let debugSkipWater = true
     private var skyAvgTex: MTLTexture?
     private var frameIdx = 0
 
@@ -382,7 +383,12 @@ final class MetalRenderer {
         dpd.vertexFunction = library.makeFunction(name: "domeVS")
         dpd.fragmentFunction = library.makeFunction(name: "domeFadeFS")
         dpd.colorAttachments[0].pixelFormat = .rgba16Float
-        domePipe = try? dev.makeRenderPipelineState(descriptor: dpd)
+        do {
+            domePipe = try dev.makeRenderPipelineState(descriptor: dpd)
+            Boot.log("穹顶管线 ok")
+        } catch {
+            Boot.log("穹顶管线失败: \(error) domeVS=\(dpd.vertexFunction != nil) domeFadeFS=\(dpd.fragmentFunction != nil)")
+        }
             waterPipe = try dev.makeRenderPipelineState(descriptor: wrpd)
             Boot.log("water 管线 ok")
         } catch { Boot.log("pipeline 失败: \(error)"); return nil }
@@ -869,7 +875,8 @@ final class MetalRenderer {
         wrp.depthAttachment.texture = depthTex
         wrp.depthAttachment.loadAction = .load
         wrp.depthAttachment.storeAction = .dontCare
-        if let wenc = cb.makeRenderCommandEncoder(descriptor: wrp) {
+        if debugSkipWater { Boot.log("调试：跳过水面 pass") }
+        if !debugSkipWater, let wenc = cb.makeRenderCommandEncoder(descriptor: wrp) {
             wenc.setRenderPipelineState(waterPipe)
             wenc.setDepthStencilState(waterDepthState)
             wenc.setVertexBuffer(waterVB, offset: 0, index: 0)
