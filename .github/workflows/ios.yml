@@ -50,3 +50,100 @@ jobs:
         with:
           name: SkyMapEditor-unsigned-ipa
           path: out/SkyMapEditor-unsigned.ipa
+
+  # 出货前自测：把同一个工程编到 iOS 模拟器里真跑一遍，读 App 自己写的 boot.log 探针，
+  # 只要"地面75%/天空10%"两处像素还等于 clearColor(0.030,0.050,0.090)，就判定"一帧都没画上去"，直接失败不让出货。
+  sim-qa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Compile Metal shaders (simulator)
+        run: |
+          mkdir -p ios/Resources/Shaders
+          xcrun -sdk iphonesimulator metal -c ios/Shaders/Scene.metal -o /tmp/Scene.air
+          xcrun -sdk iphonesimulator metallib /tmp/Scene.air -o ios/Resources/Shaders/default.metallib
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build for simulator
+        working-directory: ios
+        run: |
+          xcodebuild -project SkyMapEditor.xcodeproj \
+            -scheme SkyMapEditor \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-sim \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Boot simulator and run app
+        run: |
+          set -x
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+import json,sys
+d=json.load(sys.stdin)['devices']
+pick=None
+for rt,devs in d.items():
+    for x in devs:
+        if x.get('isAvailable') and x['name'].startswith('iPhone'):
+            pick=x['udid']; break
+    if pick: break
+print(pick or '')
+")
+          echo "UDID=$UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" ios/build-sim/Build/Products/Release-iphonesimulator/SkyMapEditor.app
+          xcrun simctl launch "$UDID" com.skyeditor.metal
+          sleep 25
+          xcrun simctl io "$UDID" screenshot /tmp/qa-shot.png
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Dump boot.log
+        run: |
+          UDID="$UDID"
+          DATA=$(xcrun simctl get_app_container "$UDID" com.skyeditor.metal data)
+          echo "container: $DATA"
+          ls -l "$DATA/Documents" || true
+          cp "$DATA/Documents/boot.log" /tmp/qa-boot.log || true
+          echo "-------- boot.log --------"
+          cat /tmp/qa-boot.log || true
+
+      - name: Assert something actually rendered
+        run: |
+          python3 - <<'PY'
+import re,sys
+p='/tmp/qa-boot.log'
+s=open(p, encoding='utf-8', errors='ignore').read() if __import__('os').path.exists(p) else ''
+if not s:
+    print('QA FAIL: 没有 boot.log（App 可能在启动阶段就挂了）'); sys.exit(1)
+if 'first frame ok' not in s:
+    print('QA FAIL: 没走到 first frame ok'); sys.exit(1)
+probes=re.findall(r'探针 f\d+ .*?地形=\(([^)]*)\)', s)
+if not probes:
+    print('QA FAIL: 日志里没有探针读数'); sys.exit(1)
+def nums(t): return tuple(round(float(x),4) for x in t.split(',')[:3])
+clear=(0.03,0.05,0.09)
+bad=0
+for t in probes:
+    v=nums(t)
+    print('probe', v)
+    if all(abs(v[i]-clear[i])<1e-3 for i in range(3)): bad+=1
+if bad==len(probes):
+    print('QA FAIL: 所有探针都等于 clearColor，主 pass 一个像素都没画上去'); sys.exit(1)
+PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-simulator
+          path: |
+            /tmp/qa-shot.png
+            /tmp/qa-boot.log
