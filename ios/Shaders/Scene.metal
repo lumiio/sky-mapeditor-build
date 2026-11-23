@@ -206,7 +206,12 @@ fragment float4 fs(VOut in [[stage_in]], constant U &u [[buffer(1)]],
   float3 refl = probeSpecR * clamp((fit + (specColor * (t148.w - fit))), 0.0, 1.0);
   float3 ambSpec = mix(refl, min(float3(100.0), specGGX(N, V, ambDir, min(1.0, rough + 0.2 * (1.0 - ambDirLen)), specColor)), ambDirLen);
   float3 ambTerm = ((probeAmbR * color15) * (1.0 - vc.y)) + mix(ambSpec, subsurf, tmpvar_27);
-  finalColor = finalColor + (((tmpvar_19 * ambTerm) * lm.x) + ((5.0 * emission) * color15));
+  // 原版（Mesh-22h.ios.fs IR）：ambient 项 = (光簇累计 + v_color.rgb) * 烘焙贴图 rgb * 环境光 * 阴影曲线
+  float3 ambBase = (tmpvar_19 + vc.rgb) * lm.rgb;
+  float ambShadow = min(occMul * 0.25 + 0.75, 1.0);
+  // 自发光：(vc.z-0.51)^2 * 4π * albedo * min(2*vc.z,1)
+  float3 emitTerm = color15 * min(1.0, vc.z * 2.0) * (12.566371 * emissionRaw * emissionRaw);
+  finalColor = finalColor + (((ambBase * ambTerm) * ambShadow) + emitTerm);
 
   // 自发光材质（u_selfLit）——星星那类
   float3 selfLitColor = float3(0.0);
