@@ -413,3 +413,26 @@ fragment float4 fxaaFS(TIn in [[stage_in]], constant FXU &u [[constant buffer(1)
   float3 col = (l16 < mn || l16 > mx) ? s13 : s16;
   return float4(col, 0.5);
 }
+
+// ---- Ambience 天空：EnvNode 的 5 段 tint（tintTop/MidTop/MidMid/MidBot/Bot）按视线仰角铺开 ----
+struct SkyU { float4 bands[5]; float4 misc; };   // bands: Top, MidTop, MidMid, MidBot, Bot；misc: x=aspect y=tanHalf
+struct SkyOut { float4 pos [[position]]; float2 uv; };
+vertex SkyOut skyVS(uint vid [[vertex_id]], constant SkyU &u [[constant buffer(1)]]) {
+  SkyOut o;
+  float2 p = float2((vid == 2) ? 3.0 : -1.0, (vid == 1) ? 3.0 : -1.0);
+  o.pos = float4(p, 1.0, 1.0);
+  o.uv = (p + 1.0) * 0.5;
+  return o;
+}
+fragment float4 skyFS(SkyOut in [[stage_in]], constant SkyU &u [[constant buffer(1)]]) {
+  float2 ndc = in.uv * 2.0 - 1.0;
+  float3 dir = normalize(float3(ndc.x * u.misc.y * u.misc.x, -ndc.y * u.misc.y, -1.0));
+  float elev = clamp(dir.y, -1.0, 1.0);
+  // 5 段等分仰角带，带间 smoothstep 过渡（band 顺序与 EnvNode 字段同名）
+  float t = clamp((elev + 1.0) * 0.5, 0.0, 1.0);      // 0=Bot 1=Top
+  float seg = t * 4.0;
+  float f = smoothstep(0.0, 1.0, fract(seg));
+  int k = min(3, int(floor(seg)));
+  float3 c = mix(u.bands[4 - k].xyz, u.bands[4 - k - 1].xyz, f);
+  return float4(c, 1.0);
+}

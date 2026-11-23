@@ -76,6 +76,7 @@ final class MetalRenderer {
     private var fogTex: MTLTexture?
     private var fogOut: MTLTexture?
     private var waterPipe: MTLRenderPipelineState?
+    private var skyPipe: MTLRenderPipelineState?
     private var depthState: MTLDepthStencilState?
     private var waterDepthState: MTLDepthStencilState?
     private var sampler: MTLSamplerState?
@@ -214,6 +215,11 @@ final class MetalRenderer {
         do {
             meshPipe = try dev.makeRenderPipelineState(descriptor: rpd)
             Boot.log("mesh 管线 ok")
+        let skp = MTLRenderPipelineDescriptor()
+        skp.vertexFunction = library.makeFunction(name: "skyVS")
+        skp.fragmentFunction = library.makeFunction(name: "skyFS")
+        skp.colorAttachments[0].pixelFormat = .rgba16Float
+        skyPipe = try? dev.makeRenderPipelineState(descriptor: skp)
             waterPipe = try dev.makeRenderPipelineState(descriptor: wrpd)
             Boot.log("water 管线 ok")
         } catch { Boot.log("pipeline 失败: \(error)"); return nil }
@@ -544,6 +550,18 @@ final class MetalRenderer {
         rp.depthAttachment.clearDepth = 1
 
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
+        if let skyPipe {
+            struct SB { var bands: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>); var misc: SIMD4<Float> }
+            var sb = SB(bands: (envColor4("tintTop", SIMD4<Float>(0.0, 0.02, 0.05, 1)),
+                                envColor4("tintMidTop", SIMD4<Float>(0.02, 0.05, 0.09, 1)),
+                                envColor4("tintMidMid", SIMD4<Float>(0.05, 0.08, 0.12, 1)),
+                                envColor4("tintMidBot", SIMD4<Float>(0.09, 0.11, 0.13, 1)),
+                                envColor4("tintBot", SIMD4<Float>(0.12, 0.13, 0.12, 1))),
+                        misc: SIMD4<Float>(Float(w) / Float(h), tan(25.0 * Float.pi / 180.0), 0, 0))
+            enc.setRenderPipelineState(skyPipe)
+            enc.setFragmentBytes(&sb, length: MemoryLayout<SB>.stride, index: 1)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        }
         enc.setRenderPipelineState(meshPipe)
         enc.setDepthStencilState(depthState)
         enc.setVertexBuffer(vbuf, offset: 0, index: 0)
@@ -731,6 +749,11 @@ final class MetalRenderer {
     }
 
     /// server.cjs: Te = 1/max(1e-4,px)-1；log(max(1e-4, 0.2126R+0.7152G+0.0722B))，取几何平均
+    private func envColor4(_ key: String, _ def: SIMD4<Float>) -> SIMD4<Float> {
+        guard let v = man?.env?[key], case let .arr(a) = v, a.count >= 3 else { return def }
+        return SIMD4<Float>(a[0], a[1], a[2], a.count > 3 ? a[3] : 1)
+    }
+
     private func averageLuminance(of tex: MTLTexture) -> Float {
         let rows = 8, cols = 128
         var sumLog: Float = 0; var n: Float = 0
