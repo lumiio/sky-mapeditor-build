@@ -1044,8 +1044,14 @@ final class MetalRenderer {
                 }
             }
         }
-        return n > 0 ? acc / n : averageSky
+        let avg = n > 0 ? acc / n : averageSky
+        if skyAvgLogCount < 3 {
+            skyAvgLogCount += 1
+            Boot.log("天空均值[第\(skyAvgLogCount)次] = (\(avg.x), \(avg.y), \(avg.z)) 有效像素 \(n)")
+        }
+        return avg
     }
+    private var skyAvgLogCount = 0
 
     private func perspective(_ fovy: Float, _ aspect: Float, _ near: Float, _ far: Float) -> simd_float4x4 {
         let y = 1 / tan(fovy / 2), x = y / aspect
