@@ -270,10 +270,11 @@ final class MetalRenderer {
     /// 观察用曝光增益（编辑器 UI 滑杆），乘在 tonemap 的 exposure 上；默认 1
     var exposureGain: Float = 1.0 {
         didSet {
-            let base = envNum("exposure", 1)
-            Boot.log("曝光增益 gain=\(exposureGain) 基准=\(base) 有效=\(base * exposureGain) 平均亮度=\(averageLum)")
+            Boot.log("曝光增益 gain=\(exposureGain) 基准=\(exposureBase) 有效=\(exposureBase * exposureGain) 平均亮度=\(averageLum)")
         }
     }
+    /// 关卡 env 里的 exposure（draw 时从 man.env 读，供滑杆日志用）
+    private var exposureBase: Float = 1.0
     var center = SIMD3<Float>(0, 0, 0)
     var radius: Float = 10
     var waterY: Float = -5
@@ -726,6 +727,7 @@ final class MetalRenderer {
         }
         func envNum(_ k: String, _ def: Float) -> Float { man.env?[k]?.first ?? def }
 
+        exposureBase = envNum("exposure", 1)
         let sunEl = envNum("sunAngleY", 55) * Float.pi / 180
         let sunAz = envNum("sunAngleXZ", 30) * Float.pi / 180
         let sunDir = simd_normalize(SIMD3<Float>(cos(sunEl)*cos(sunAz), sin(sunEl), cos(sunEl)*sin(sunAz)))
