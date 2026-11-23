@@ -39,21 +39,48 @@ final class MetalView: MTKView {
 final class ViewerController: UIViewController, MTKViewDelegate {
     private var renderer: MetalRenderer?
     private var view3d: MetalView!
-    private var segmented: UISegmentedControl!
-    private var info: UILabel!
-    private var expoSlider: UISlider!
-    private var expoLabel: UILabel!
+
+    // 底部一张圆角卡片，分三区：关卡 / 显示 / 曝光
+    private var card: UIView!
+    private var titleLabel: UILabel!
+    private var hud: UILabel!
+    private var levelBar: UIStackView!
+    private var levelChips: [UIButton] = []
     private var btnReset: UIButton!
     private var btnFog: UIButton!
     private var btnDome: UIButton!
+    private var btnCloud: UIButton!
+    private var expoSlider: UISlider!
+    private var expoLabel: UILabel!
+
+    private var loading = false
+    private var cur = 0
+    private var pendingPrevLog = ""
+
     private let levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village",
                             "Dawn_TrialsEarth", "Dawn_TrialsAir", "Night_JarCave", "AR_WheatField"]
-    private let levels = ["烛窟", "蝶原", "草原村", "土试炼", "风试炼", "罐洞", "麦田"]
+    private let levelNames = ["烛窟", "蝶原", "草原村", "土试炼", "风试炼", "罐洞", "麦田"]
+
+    /// 全界面只用一个主色
+    private let accent = UIColor(red: 0.31, green: 0.55, blue: 0.98, alpha: 1.0)
+    private let chipOff = UIColor(white: 1.0, alpha: 0.09)
+    private let textDim = UIColor(white: 1.0, alpha: 0.55)
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        setupView()
+        setupCard()
+        // 上一轮没跑到 first frame 就没了，说明崩在初始化里，把断点留着
+        let prev = Boot.tail(40)
+        Boot.reset()
+        if !prev.isEmpty && !prev.contains("first frame") {
+            pendingPrevLog = prev.split(separator: "\n").suffix(2).map { String($0.prefix(70)) }.joined(separator: " ← ")
+        }
+        load(level: levelIDs[0], index: 0)
+    }
 
+    private func setupView() {
         view3d = MetalView(frame: view.bounds, device: MTLCreateSystemDefaultDevice())
         view3d.translatesAutoresizingMaskIntoConstraints = false
         // 原版 Tonemap 输出是线性值，编辑器在回读时手动做 linear→sRGB；
@@ -65,80 +92,15 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         view3d.delegate = self
         view3d.isMultipleTouchEnabled = true
         view3d.preferredFramesPerSecond = 60
-        // 3× 屏下 drawable 是 1320×2868，一帧十几张全屏贴图 ≈300MB，切关卡时新旧渲染器叠加会被系统 jetsam 杀掉。
-        // 编辑器不需要 3× 精度，封顶 2×（880×1912），内存直接降 55%。
+        // 3× 屏下 drawable 是 1320×2868，一帧十几张全屏贴图 ≈300MB；封顶 2×，内存降 55%
         view3d.contentScaleFactor = min(UIScreen.main.scale, 2.0)
         view.addSubview(view3d)
-
-        segmented = UISegmentedControl(items: levels)
-        segmented.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 11, weight: .medium)], for: .normal)
-        segmented.selectedSegmentIndex = 0
-        segmented.apportionsSegmentWidthsByContent = true
-        segmented.translatesAutoresizingMaskIntoConstraints = false
-        segmented.addTarget(self, action: #selector(changeLevel), for: .valueChanged)
-        segmented.backgroundColor = UIColor(white: 0.1, alpha: 0.9)
-        segmented.selectedSegmentTintColor = UIColor(white: 0.3, alpha: 1)
-        segmented.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .normal)
-        view.addSubview(segmented)
-
-        expoSlider = UISlider()
-        expoSlider.minimumValue = -2          // 10^-2 = 0.01×
-        expoSlider.maximumValue = 2.5         // 10^2.5 ≈ 316×
-        expoSlider.value = 0                  // 10^0 = 1×
-        expoSlider.translatesAutoresizingMaskIntoConstraints = false
-        expoSlider.addTarget(self, action: #selector(onExposure), for: .valueChanged)
-        view.addSubview(expoSlider)
-
-        expoLabel = UILabel()
-        expoLabel.translatesAutoresizingMaskIntoConstraints = false
-        expoLabel.textColor = .white
-        expoLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        expoLabel.text = "曝光 ×1.00"
-        view.addSubview(expoLabel)
-
-        func chip(_ title: String, _ act: Selector) -> UIButton {
-            let b = UIButton(type: .system)
-            b.setTitle(title, for: .normal)
-            b.setTitleColor(.white, for: .normal)
-            b.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
-            b.backgroundColor = UIColor(white: 0.16, alpha: 0.9)
-            b.layer.cornerRadius = 8
-            b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
-            b.addTarget(self, action: act, for: .touchUpInside)
-            return b
-        }
-        btnReset = chip("重置视角", #selector(onReset))
-        btnFog = chip("雾：开", #selector(onToggleFog))
-        btnDome = chip("穹顶：开", #selector(onToggleDome))
-        let chipRow = UIStackView(arrangedSubviews: [btnReset, btnFog, btnDome])
-        chipRow.axis = .horizontal
-        chipRow.spacing = 8
-        chipRow.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(chipRow)
-
-        info = UILabel()
-        info.translatesAutoresizingMaskIntoConstraints = false
-        info.textColor = .white
-        info.font = .systemFont(ofSize: 12, weight: .medium)
-        info.text = "拖动旋转 · 双指缩放"
-        view.addSubview(info)
 
         NSLayoutConstraint.activate([
             view3d.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             view3d.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             view3d.topAnchor.constraint(equalTo: view.topAnchor),
             view3d.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            segmented.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            segmented.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            info.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 6),
-            info.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            expoSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            expoSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            expoSlider.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -22),
-            expoLabel.leadingAnchor.constraint(equalTo: expoSlider.leadingAnchor),
-            expoLabel.bottomAnchor.constraint(equalTo: expoSlider.topAnchor, constant: -2),
-            chipRow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            chipRow.bottomAnchor.constraint(equalTo: expoLabel.topAnchor, constant: -10),
         ])
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(onPinch(_:)))
@@ -149,18 +111,146 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(onPan(_:)))
         pan.minimumNumberOfTouches = 2
         view3d.addGestureRecognizer(pan)
-
-        // 先读上一轮的启动日志：没有「first frame」就说明上次启动阶段崩了，把断点留住
-        let prevLog = Boot.tail(30)
-        Boot.reset()
-        load(level: levelIDs[0])
-        if !prevLog.isEmpty && !prevLog.contains("first frame") {
-            let lines = prevLog.split(separator: "\n").suffix(2).map { String($0).prefix(60) }
-            info.text = "上次断在：" + lines.joined(separator: " ← ")
-        }
     }
 
-    /// 当前进程占用（phys_footprint），切关卡时打点，便于判断是不是被内存杀掉
+    private func setupCard() {
+        card = UIView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.backgroundColor = UIColor(white: 0.07, alpha: 0.93)
+        card.layer.cornerRadius = 18
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 1
+        card.layer.borderColor = UIColor(white: 1.0, alpha: 0.07).cgColor
+        view.addSubview(card)
+
+        titleLabel = UILabel()
+        titleLabel.textColor = .white
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.text = levelNames[0]
+
+        hud = UILabel()
+        hud.textColor = textDim
+        hud.font = .systemFont(ofSize: 11, weight: .regular)
+        hud.textAlignment = .right
+        hud.text = "…"
+        hud.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let head = UIStackView(arrangedSubviews: [titleLabel, hud])
+        head.axis = .horizontal
+        head.alignment = .firstBaseline
+        head.spacing = 8
+
+        // 关卡：横向滚动条，避免 7 个字挤成一坨
+        levelBar = UIStackView()
+        levelBar.axis = .horizontal
+        levelBar.spacing = 6
+        levelBar.translatesAutoresizingMaskIntoConstraints = false
+        for (i, name) in levelNames.enumerated() {
+            let b = makeChip(name)
+            b.tag = i
+            b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
+            levelChips.append(b)
+            levelBar.addArrangedSubview(b)
+        }
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.showsVerticalScrollIndicator = false
+        scroll.addSubview(levelBar)
+        NSLayoutConstraint.activate([
+            levelBar.topAnchor.constraint(equalTo: scroll.topAnchor),
+            levelBar.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
+            levelBar.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            levelBar.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            levelBar.heightAnchor.constraint(equalTo: scroll.heightAnchor),
+            scroll.heightAnchor.constraint(equalToConstant: 30),
+        ])
+
+        // 显示区：视角 / 雾 / 穹顶 / 云
+        btnReset = makeChip("重置视角")
+        btnReset.addTarget(self, action: #selector(onReset), for: .touchUpInside)
+        btnFog = makeChip("雾")
+        btnFog.addTarget(self, action: #selector(onToggleFog), for: .touchUpInside)
+        btnDome = makeChip("穹顶")
+        btnDome.addTarget(self, action: #selector(onToggleDome), for: .touchUpInside)
+        btnCloud = makeChip("云")
+        btnCloud.addTarget(self, action: #selector(onToggleCloud), for: .touchUpInside)
+        let row = UIStackView(arrangedSubviews: [btnReset, btnFog, btnDome, btnCloud])
+        row.axis = .horizontal
+        row.spacing = 6
+        row.distribution = .fillProportionally
+
+        expoLabel = UILabel()
+        expoLabel.textColor = textDim
+        expoLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        expoLabel.text = "曝光 ×1.00"
+
+        expoSlider = UISlider()
+        expoSlider.minimumValue = -2
+        expoSlider.maximumValue = 2.5
+        expoSlider.value = 0
+        expoSlider.minimumTrackTintColor = accent
+        expoSlider.maximumTrackTintColor = UIColor(white: 1, alpha: 0.12)
+        expoSlider.thumbTintColor = .white
+        expoSlider.addTarget(self, action: #selector(onExposure), for: .valueChanged)
+
+        let expoStack = UIStackView(arrangedSubviews: [expoLabel, expoSlider])
+        expoStack.axis = .vertical
+        expoStack.spacing = 2
+
+        let stack = UIStackView(arrangedSubviews: [head, scroll, row, expoStack])
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            card.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            card.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            card.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
+        ])
+
+        refreshLevelChips()
+    }
+
+    private func makeChip(_ title: String) -> UIButton {
+        let b = UIButton(type: .system)
+        b.setTitle(title, for: .normal)
+        b.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
+        b.layer.cornerRadius = 9
+        b.layer.cornerCurve = .continuous
+        b.contentEdgeInsets = UIEdgeInsets(top: 5, left: 11, bottom: 5, right: 11)
+        b.setContentHuggingPriority(.required, for: .horizontal)
+        b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        b.backgroundColor = chipOff
+        b.setTitleColor(UIColor(white: 1, alpha: 0.75), for: .normal)
+        return b
+    }
+
+    private func style(_ b: UIButton, on: Bool) {
+        b.backgroundColor = on ? accent : chipOff
+        b.setTitleColor(on ? .white : UIColor(white: 1, alpha: 0.72), for: .normal)
+    }
+
+    private func refreshLevelChips() {
+        for (i, b) in levelChips.enumerated() { style(b, on: i == cur) }
+    }
+
+    private func refreshToggles() {
+        guard let r = renderer else { return }
+        style(btnFog, on: !r.debugSkipFogPost)
+        style(btnDome, on: !r.debugSkipSkyDome)
+        style(btnCloud, on: !r.hideCloud)
+        btnFog.setTitle(r.debugSkipFogPost ? "雾 关" : "雾 开", for: .normal)
+        btnDome.setTitle(r.debugSkipSkyDome ? "穹顶 关" : "穹顶 开", for: .normal)
+        btnCloud.setTitle(r.hideCloud ? "云 关" : "云 开", for: .normal)
+    }
+
+    /// 当前进程占用，切关时打点，用来判断是不是被内存杀掉
     private func memMB() -> Int {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
@@ -172,51 +262,66 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         return kr == KERN_SUCCESS ? Int(info.phys_footprint / 1_048_576) : -1
     }
 
-    private func load(level: String) {
-        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else {
-            info.text = "Assets 资源目录缺失"; return
+    private func load(level: String, index: Int) {
+        if loading {
+            Boot.log("忽略重复切换 \(level)（上一关还在建）")
+            return
         }
-        let bin = root.appendingPathComponent("\(level).terrain.bin")
-        guard FileManager.default.fileExists(atPath: bin.path) else {
-            info.text = "\(level) 的地形数据不在这版包里"
+        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else {
+            hud.text = "Assets 缺失"; return
+        }
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("\(level).terrain.bin").path) else {
+            hud.text = "\(level) 无地形数据"
             Boot.log("切换被拦：缺 \(level).terrain.bin")
             return
         }
-        // 先把旧渲染器彻底放掉再建新的：两份同时在线时显存会翻倍，切关卡闪退多半死在这里
-        Boot.log("UI 切换 → \(level) 内存=\(memMB())MB")
+
+        cur = index
+        refreshLevelChips()
+        titleLabel.text = levelNames[index]
+        hud.text = "加载中…"
+        loading = true
+
+        // 先把旧渲染器停掉、等 GPU 把在飞的命令跑完再释放：Metal 资源还在被 command buffer 引用时释放会直接把进程打死
+        Boot.log("切换 → \(level) 内存=\(memMB())MB")
         view3d.isPaused = true
-        view3d.renderer = nil
+        let old = renderer
         renderer = nil
-        Boot.log("UI 旧渲染器已释放 内存=\(memMB())MB")
-        var nr: MetalRenderer?
-        autoreleasepool { nr = MetalRenderer(level: level) }
-        Boot.log("UI 新建完成 \(level) ok=\(nr != nil) 内存=\(memMB())MB drawable=\(Int(view3d.drawableSize.width))×\(Int(view3d.drawableSize.height))")
-        renderer = nr
-        view3d.renderer = nr
-        view3d.isPaused = false
-        if nr == nil {
-            info.text = "初始化失败（Metal 不可用或数据缺失）"
-            return
+        view3d.renderer = nil
+        old?.retire()
+        Boot.log("旧渲染器已退役 内存=\(memMB())MB")
+
+        // 建渲染器放后台，主线程不再阻塞（阻塞超过 20s 会被系统 watchdog 直接掐掉，也没有崩溃日志）
+        DispatchQueue.global(qos: .userInitiated).async {
+            var nr: MetalRenderer?
+            autoreleasepool { nr = MetalRenderer(level: level) }
+            DispatchQueue.main.async {
+                self.renderer = nr
+                self.view3d.renderer = nr
+                self.view3d.isPaused = false
+                self.loading = false
+                Boot.log("切换完成 \(level) ok=\(nr != nil) 内存=\(self.memMB())MB drawable=\(Int(self.view3d.drawableSize.width))×\(Int(self.view3d.drawableSize.height))")
+                guard let nr else {
+                    self.hud.text = "初始化失败"
+                    return
+                }
+                nr.exposureGain = Float(pow(10.0, Double(self.expoSlider.value)))
+                var text = nr.stats
+                if let err = nr.lastError { text = "加载失败：" + err }
+                if !self.pendingPrevLog.isEmpty {
+                    text += " · 上次断在 " + self.pendingPrevLog
+                    self.pendingPrevLog = ""
+                }
+                self.hud.text = text
+                self.refreshToggles()
+            }
         }
-        renderer?.exposureGain = Float(pow(10.0, Double(expoSlider.value)))
-        if let err = renderer?.lastError {
-            info.text = "加载失败：" + err
-        } else {
-            webLog(level)
-        }
-        // 换关后按钮标题要跟新渲染器的状态对齐，不然会显示反的
-        btnFog.setTitle(renderer?.debugSkipFogPost == true ? "雾：关" : "雾：开", for: .normal)
-        btnDome.setTitle(renderer?.debugSkipSkyDome == true ? "穹顶：关" : "穹顶：开", for: .normal)
     }
 
-    private func webLog(_ s: String) {
-        info.text = "\(s) · 拖动旋转 · 双指缩放"
-    }
-
-    @objc private func changeLevel() {
-        let i = segmented.selectedSegmentIndex
+    @objc private func onLevelTap(_ sender: UIButton) {
+        let i = sender.tag
         guard i >= 0, i < levelIDs.count else { return }
-        load(level: levelIDs[i])
+        load(level: levelIDs[i], index: i)
     }
 
     @objc private func onReset() {
@@ -230,13 +335,31 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     @objc private func onToggleFog() {
         guard let r = renderer else { return }
         r.debugSkipFogPost.toggle()
-        btnFog.setTitle(r.debugSkipFogPost ? "雾：关" : "雾：开", for: .normal)
+        refreshToggles()
     }
 
     @objc private func onToggleDome() {
         guard let r = renderer else { return }
         r.debugSkipSkyDome.toggle()
-        btnDome.setTitle(r.debugSkipSkyDome ? "穹顶：关" : "穹顶：开", for: .normal)
+        refreshToggles()
+    }
+
+    @objc private func onToggleCloud() {
+        guard let r = renderer else { return }
+        r.hideCloud.toggle()
+        refreshToggles()
+    }
+
+    @objc private func onExposure() {
+        let gain = Float(pow(10.0, Double(expoSlider.value)))
+        renderer?.exposureGain = gain
+        expoLabel.text = String(format: "曝光 ×%.2f", gain)
+    }
+
+    @objc private func onPinch(_ g: UIPinchGestureRecognizer) {
+        guard let r = renderer else { return }
+        r.zoom = min(6.0, max(0.2, r.zoom / Float(g.scale)))
+        g.scale = 1
     }
 
     @objc private func onPan(_ g: UIPanGestureRecognizer) {
@@ -247,18 +370,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         g.setTranslation(.zero, in: view3d)
     }
 
-    @objc private func onExposure() {
-        let gain = Float(pow(10.0, Double(expoSlider.value)))
-        expoLabel.text = String(format: "曝光 ×%.2f", gain)
-        renderer?.exposureGain = gain
-    }
-
-    @objc private func onPinch(_ g: UIPinchGestureRecognizer) {
-        guard let r = renderer else { return }
-        r.zoom = min(3.0, max(0.35, r.zoom / Float(g.scale)))
-        g.scale = 1
-    }
-
+    // MARK: - MTKViewDelegate
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
@@ -268,8 +380,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
             Boot.framed = true
             Boot.log("first frame ok")
         }
-        if let err = r.lastError, (info.text ?? "").hasPrefix("加载失败") != true {
-            info.text = "加载失败：" + err
+        if let err = r.lastError, (hud.text ?? "").hasPrefix("加载失败") != true {
+            hud.text = "加载失败：" + err
         }
     }
 }

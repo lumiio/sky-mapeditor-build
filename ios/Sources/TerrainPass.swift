@@ -78,6 +78,14 @@ final class TerrainPass {
     private var texSets: [String: [MTLTexture?]] = [:]        // key = "<shader>/<material>"
     private var roughs: [String: Float] = [:]                 // key 同上（fs 的 u_matRoughness）
     private var mats: [Int: MaterialDef] = [:]
+    /// 云族是带 alpha 的体积片，管线没配混合，硬画就是黑斑；默认关
+    var hideCloud = true
+
+    var summary: String {
+        guard let m = meta else { return "" }
+        let fam = Set(groups.keys.map { String($0.split(separator: "/").first ?? "") }).count
+        return "\(m.vertexCount) 顶点 · \(m.ranges.count) 区间 · \(groups.count) 组 / \(fam) 族"
+    }
     private var depth: MTLDepthStencilState?
     private var sampler: MTLSamplerState?
     /// 1×1 白色 cubemap，供 vs 采样 u_probeCube（原版该槽位是 texturecube）
@@ -360,6 +368,7 @@ final class TerrainPass {
 
         for (key, ranges) in groups {
             let shader = String(key.split(separator: "/").first ?? "")
+            if hideCloud && shader == "CloudSh" { continue }
             guard let pipe = pipes[shader], let objBuf = objBufs[key] else { continue }
             enc.setRenderPipelineState(pipe)
             enc.setVertexBuffer(objBuf, offset: 0, index: 0)

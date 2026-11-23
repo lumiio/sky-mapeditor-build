@@ -15,6 +15,8 @@ enum Boot {
         if let h = try? FileHandle(forWritingTo: url) {
             h.seekToEndOfFile()
             h.write(line.data(using: .utf8)!)
+            // 被系统直接 SIGKILL（jetsam / watchdog）时，缓冲区里的行会丢；同步落盘才能看清断在哪
+            try? h.synchronizeFile()
             try? h.close()
         } else {
             try? line.write(to: url, atomically: true, encoding: .utf8)

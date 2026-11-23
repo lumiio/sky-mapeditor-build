@@ -285,6 +285,12 @@ final class MetalRenderer {
 
     /// 原版 u_averageSkyColor：由引擎对天空盒做均值得到，这里用「把穹顶渲进 32×32 再读回求均值」复现
     var averageSky = SIMD3<Float>(0.05, 0.09, 0.16)
+    /// 云族（CloudSh）在 GEO0 里是带 alpha 的体积片，原版走混合；我们现在没有混合配置，硬画会变成大块黑斑。
+    /// 默认隐藏，界面「云」按钮可以打开做对照。
+    var hideCloud = true
+    /// 给界面用的关卡统计
+    private(set) var stats = ""
+
     private let debugSkipWater = true
     /// 穹顶开关：DomePass 用原版 SkyDomeFade metallib + 原版 UnitSphere.mesh（半径 1.0）；
     /// 管线或网格任一缺失时 DomePass 自身返回 nil，这里再兜一层，绝不发非法 draw（非法 draw 会让整个 command buffer 作废）
@@ -326,6 +332,8 @@ final class MetalRenderer {
         else { Boot.log("shader 函数缺失"); return nil }
         Boot.log("shader 函数就绪")
         terrain = TerrainPass(device: device, level: level)
+        terrain?.hideCloud = hideCloud
+        stats = terrain?.summary ?? "" 
 
         let vd = MTLVertexDescriptor()
         // 原版顶点：pos | nrm | a_color | a_uv0(vec4) | a_uv1(vec4) | light0 | light1 | light2 = 72 B
@@ -684,6 +692,15 @@ final class MetalRenderer {
         depthTex = device.makeTexture(descriptor: dd)
     }
 
+    /// 切关前调用：往同一个命令队列塞一个空命令缓冲并等它完成。
+    /// Metal 命令是队列内按提交顺序执行的，这个空缓冲完成即代表之前所有帧都跑完了，
+    /// 这时再释放 texture/buffer 才是安全的（否则驱动会直接把进程打死，还没有崩溃日志）。
+    func retire() {
+        let cb = queue.makeCommandBuffer()
+        cb?.commit()
+        cb?.waitUntilCompleted()
+    }
+
     func draw(in view: MTKView) {
         var miss: [String] = []
         if man == nil { miss.append("man") }
@@ -897,6 +914,7 @@ final class MetalRenderer {
             pf.u_probeShRGB2 = (0, 0, 0, 0)
             pf.u_averageProbeColor = (averageSky.x, averageSky.y, averageSky.z, 1)
             pf.u_probeCenter = (eye.x, eye.y, eye.z, 1)
+            terrain.hideCloud = hideCloud
             terrain.encode(enc, perFrame: &pf, perPass: SIMD4<Float>(skyP.u_viewportSize.0, skyP.u_viewportSize.1, 1 / Float(w), 1 / Float(h)))
             enc.setRenderPipelineState(meshPipe)
         } else if let vbuf, let ibuf {
