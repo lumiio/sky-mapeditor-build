@@ -42,6 +42,15 @@ def main():
     need(re.search(r"u_probeShR0\s*=\s*\(averageSky\.x\s*\*\s*shK", s) is not None, "u_probeShR0 = averageSky.r * Y00")
     need(re.search(r"u_averageProbeColor\s*=\s*\(averageSky\.x", s) is not None, "u_averageProbeColor = averageSky")
 
+    # 3.5) FogUpsample 必须按 IR 的 location_index 绑纹理（3..10），绑错会让原版 fs 读空 → 输出恒 1.0 → 整屏黑
+    for idx, name in ((3, "u_atmosphereTex"), (4, "u_fogTex"), (5, "u_opaqueColor"),
+                      (6, "u_opaqueDepth"), (7, "u_alphaTex0"), (8, "u_alphaTex1"),
+                      (9, "u_cloudDepth"), (10, "u_cloudFog")):
+        m = re.search(r"uenc\.setFragmentTexture\([^\n]*index: %d\)" % idx, s)
+        need(m is not None, f"FogUpsample {name} 绑在 texture {idx}")
+    need(re.search(r"for i in 3...10 \{ uenc\.setFragmentSamplerState", s) is not None,
+         "FogUpsample sampler 3..10 全绑")
+
     # 4) 日志不许每帧刷（真机 boot.log 已被刷爆，掩盖其它信息）
     need(re.search(r"if frameIdx == 0 \{\s*\n\s*Boot\.log\(\"结构体尺寸", s) is not None,
          "结构体尺寸/偏移日志只打一次")

@@ -277,10 +277,10 @@ final class MetalRenderer {
     private let debugSkipWater = true
     /// 穹顶开关：DomePass 用原版 SkyDomeFade metallib + 原版 UnitSphere.mesh（半径 1.0）；
     /// 管线或网格任一缺失时 DomePass 自身返回 nil，这里再兜一层，绝不发非法 draw（非法 draw 会让整个 command buffer 作废）
-    private let debugSkipSkyDome = true   // 诊断期：先只跑地形，确认 sceneTex 到底有没有被写
+    private let debugSkipSkyDome = false
     /// 诊断开关：真机雾管线输出恒为「1.0」(=亮度 0)，会把整帧乘黑；先让 tonemap 直读场景色，
     /// 用亮度图确认场景本身有没有内容，再回来修雾。仅诊断期打开，日志会写明。
-    private let debugSkipFogPost = true
+    private let debugSkipFogPost = false
     private var frameIdx = 0
 
     private var sceneTex: MTLTexture?
@@ -985,43 +985,35 @@ final class MetalRenderer {
             up.colorAttachments[0].loadAction = .dontCare
             up.colorAttachments[0].storeAction = .store
             if let uenc = cb.makeRenderCommandEncoder(descriptor: up) {
-                // Scene.metal 的 fogUpsampleFS 声明是 `constant FU &u [[constant buffer(1)]]`，
-                // FU 是 12 个 float4 的自建结构，不是 PerFrame 1584B 的裁剪视图。
-                // 之前按 IR 的「buf2=PerFrame」把 PerFrame 绑到 index 2，shader 却从 buffer(1) 读，
-                // 实际读到的是 16B 的 viewport → u_averageLum 等全 0，雾合成被 1e-4 兜底压到 0.001（整屏黑）。
-                // 这里按 FU 字段顺序逐项映射原版 PerFrame 的值，绑到 shader 真正读取的 buffer(1)。
-                struct FUF {
-                    var eyePos: SIMD4<Float>; var sunDir: SIMD4<Float>
-                    var sunColor: SIMD4<Float>; var sunSize: SIMD4<Float>
-                    var fogDensityHeightDist: SIMD4<Float>; var atmosphereDensity: SIMD4<Float>
-                    var atmosphereSample: SIMD4<Float>; var avgSkyboxColor: SIMD4<Float>
-                    var atmSunColor: SIMD4<Float>; var earthPosRad: SIMD4<Float>
-                    var viewportSize: SIMD4<Float>; var averageLum: SIMD4<Float>
-                }
+                // FogUpsample 的 air 布局（IR 签名）：buf0=16B（未用）、buf1=PerObject 16B（抖动偏移）、buf2=PerFrame 1584B
                 var fogObj = SIMD4<Float>(0, 0, 0, 0)
+                var fogF = skyF
+                fogF.u_fogDensityHeightDist = (envNum("fogDensity", 1), envNum("fogHeight", 0.1), envNum("drawDistance", 15000))
+                fogF.u_atmosphereDensity = envNum("atmosphereDensity", 1)
                 let tintTopV = envColor4("tintTop", SIMD4<Float>(0.0216, 0.0928, 0.3301, 1))
+                fogF.u_averageSkyboxColor = (tintTopV.x, tintTopV.y, tintTopV.z, tintTopV.w)
                 let sunV = envColor4("sunColor", SIMD4<Float>(0.0825, 0.1882, 0.7490, 1))
-                let ssz = skyF.u_sunSizeIntMoonPhase
-                var fogF = FUF(eyePos: u.eyePos,
-                               sunDir: u.sunDir,
-                               sunColor: u.sunColor,
-                               sunSize: SIMD4<Float>(ssz.0, ssz.1, ssz.2, ssz.3),
-                               fogDensityHeightDist: SIMD4<Float>(envNum("fogDensity", 1), envNum("fogHeight", 0.1), envNum("drawDistance", 15000), 1),
-                               atmosphereDensity: SIMD4<Float>(envNum("atmosphereDensity", 1), 0, 0, 0),
-                               atmosphereSample: SIMD4<Float>(0, 0, 0, 0),
-                               avgSkyboxColor: tintTopV,
-                               atmSunColor: sunV,
-                               earthPosRad: SIMD4<Float>(0, 0, 0, 0),
-                               viewportSize: SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h)),
-                               averageLum: SIMD4<Float>(averageLum, 0, 0, 0))
+                fogF.u_atmosphereSunColor = (sunV.x, sunV.y, sunV.z, sunV.w)
+                fogF.u_earthPosRad = (0, 0, 0, 0)
+                fogF.u_camNearPlane = (nearD, farD, 0, 0)
                 uenc.setRenderPipelineState(fogUpsamplePipe)
-                // 与 MSL 的 buffer(1) 对齐；buffer(0) 保持原版 PerObject 16B（抖动偏移，本关为 0）
-                uenc.setFragmentBytes(&fogObj, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
-                uenc.setFragmentBytes(&fogF, length: MemoryLayout<FUF>.stride, index: 1)
-                uenc.setFragmentTexture(sceneTex2, index: 0)
-                uenc.setFragmentTexture(fogTex, index: 2)
-                uenc.setFragmentTexture(fallbackTex, index: 3)
-                uenc.setFragmentSamplerState(clampSampler, index: 0)
+                // FogUpsample 的 air 绑定（IR location_index）：0=PerObject 16B、1=PerPass 16B(u_viewportSize)、2=PerFrame 1584B
+                var fogPass = SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h))
+                uenc.setFragmentBytes(&fogObj, length: 16, index: 0)
+                uenc.setFragmentBytes(&fogPass, length: 16, index: 1)
+                uenc.setFragmentBytes(&fogF, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
+                // IR !25..!32：texture 3=u_atmosphereTex 4=u_fogTex 5=u_opaqueColor 6=u_opaqueDepth
+                //            7=u_alphaTex0 8=u_alphaTex1 9=u_cloudDepth 10=u_cloudFog
+                // 之前绑在 0/2/3 → 原版 fs 全读空，输出恒 1/(1+0)=1.0，tonemap 反解成 0 → 整屏黑
+                uenc.setFragmentTexture(blackTex ?? fallbackTex, index: 3)
+                uenc.setFragmentTexture(fogTex, index: 4)
+                uenc.setFragmentTexture(sceneTex2, index: 5)
+                uenc.setFragmentTexture(depthTex, index: 6)
+                uenc.setFragmentTexture(whiteTex ?? fallbackTex, index: 7)
+                uenc.setFragmentTexture(whiteTex ?? fallbackTex, index: 8)
+                uenc.setFragmentTexture(depthTex, index: 9)
+                uenc.setFragmentTexture(blackTex ?? fallbackTex, index: 10)
+                for i in 3...10 { uenc.setFragmentSamplerState(clampSampler, index: i) }
                 uenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                 uenc.endEncoding()
             }
@@ -1079,6 +1071,7 @@ final class MetalRenderer {
                 Boot.log("帧体检 f\(frameIdx) cb=\(cb.status.rawValue) err=\(String(describing: cb.error)) 存储=\(sceneTex.storageMode.rawValue)/\(fogOut.storageMode.rawValue) 尺寸=\(sceneTex.width)×\(sceneTex.height)")
                 Boot.log("scene 亮度图 f\(frameIdx):\n\(probeGrid(sceneTex, 24, 10))")
                 Boot.log("雾后 亮度图 f\(frameIdx):\n\(probeGrid(fogOut, 24, 10))")
+                Boot.log("显示(bgra8) 中心60%,50%=\(probeBGRA(ldrTex, 0.6, 0.5)) 顶部10%=\(probeBGRA(ldrTex, 0.5, 0.1))")
             }
         }
     }
@@ -1151,6 +1144,18 @@ final class MetalRenderer {
             out += line + "\n"
         }
         return out
+    }
+
+    private func probeBGRA(_ tex: MTLTexture?, _ fx: Float, _ fy: Float) -> String {
+        guard let tex else { return "nil" }
+        let w = tex.width, h = tex.height
+        let x = min(w - 1, Int(Float(w) * fx)), y = min(h - 1, Int(Float(h) * fy))
+        var buf = [UInt8](repeating: 0, count: 4)
+        buf.withUnsafeMutableBytes { raw in
+            tex.getBytes(raw.baseAddress!, bytesPerRow: 4,
+                         from: MTLRegionMake2D(x, y, 1, 1), mipmapLevel: 0)
+        }
+        return String(format: "(b=%d g=%d r=%d a=%d)", buf[0], buf[1], buf[2], buf[3])
     }
 
     private func probeHalf(_ tex: MTLTexture?, _ fx: Float, _ fy: Float) -> String {
