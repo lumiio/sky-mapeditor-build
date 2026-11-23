@@ -41,8 +41,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     private var view3d: MetalView!
     private var segmented: UISegmentedControl!
     private var info: UILabel!
-    private let levelIDs = ["CandleSpace", "CarryLand3", "Prairie_ButterflyFields", "Prairie_Village", "Dawn_TrialsEarth", "Night_JarCave"]
-    private let levels = ["烛窟", "搬运岛", "蝶原", "草原村", "土试炼", "罐洞"]
+    private let levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village", "Dawn_TrialsEarth", "Night_JarCave"]
+    private let levels = ["烛窟", "蝶原", "草原村", "土试炼", "罐洞"]
 
     override func viewDidLoad() {
         super.viewDidLoad()

@@ -790,7 +790,7 @@ final class MetalRenderer {
                 sky.u_cloudColor = t3(envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)))
                 sky.u_cloudAbsorption = envNum("cloudAbsorption", 0)
                 sky.u_cloudPatchiness = envNum("cloudPatchiness", 0)
-                sky.u_skyFadeOut = envNum("skyFadeOut", 0)
+                sky.u_skyFadeOut = envNum("skyFadeOut", 1)   // EnvNode 无此字段；0 = 整块穹顶被淡出成黑（上一版把天空和均值都杀成 0）
 
             enc.setRenderPipelineState(domePipe)
             enc.setFragmentBytes(&sky, length: MemoryLayout<PerObjectUniforms>.stride, index: 2)
