@@ -213,7 +213,9 @@ final class TerrainPass {
         } else { Boot.log("云体积缺失") }
         // 关卡里的 5 个 PointLight（TGCL 只序列化 transform，96 B 记录：id@0 / transform@16 / enabled@80）
         // 均匀缩放当作光照半径；颜色取 EnvNode AmbiencePointLight.color × intensity（u_pointLight 同源）
-        let plColor = SIMD3<Float>(0.0155, 0.0476, 0.1718) * 10.0
+        // 引擎构造函数（0x1009e7f6c）把 256 条灯记录的颜色字段统一写成 __common 里的常量 vec4（无文件数据=0），
+        // 关卡 TGCL 的 5 个 PointLight 又只有 transform 没有颜色/强度 → 官方默认这 5 盏灯不发光。
+        let plColor = SIMD3<Float>(0, 0, 0)
         let levelLights: [(pos: SIMD3<Float>, radius: Float, color: SIMD3<Float>)] = [
             (SIMD3(-307.41, 43.14, 468.34), 20, plColor),
             (SIMD3(-386.05, 8.08, 431.77), 3, plColor),
