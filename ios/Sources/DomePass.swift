@@ -73,8 +73,9 @@ final class DomePass {
             memcpy(&interleaved[4], p.advanced(by: 8 + posBytes + nrmBytes + colBytes), vc * 32)
             _ = p
         }
+        let dev = device
         func buf(_ base: UnsafeRawPointer, _ n: Int) -> MTLBuffer? {
-            device.makeBuffer(bytes: base, length: max(n, 1), options: .storageModeShared)
+            dev.makeBuffer(bytes: base, length: max(n, 1), options: .storageModeShared)
         }
         vpos = bin.withUnsafeBytes { buf($0.baseAddress!.advanced(by: 8), posBytes) }
         vnrm = bin.withUnsafeBytes { buf($0.baseAddress!.advanced(by: 8 + posBytes), nrmBytes) }
