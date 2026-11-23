@@ -146,6 +146,38 @@ final class TerrainPass {
             return t
         }
 
+        // 光簇图集（原版 fs 语义：uv=[[position]].xy*(32,16)，簇号=y*32+x；行0=表头，行1..count=光源条目）
+        // 表头：(簇号, 512-簇号, count, 0)；PR 条目：(光世界位置 xyz, w=半径²)；CS 条目：(光颜色 xyz, w=0)
+        // 片元第 1 段取 ratio = clamp(PR.w / d²) (CS.w=0 时该式成立)，第 2 段用 CS.x 作遮蔽系数
+        func makeLightAtlas(_ lights: [(pos: SIMD3<Float>, radius: Float, color: SIMD3<Float>)]) -> (MTLTexture?, MTLTexture?)? {
+            // 原版取法：read_texture_2d 坐标 = (x=行, y=簇号)，所以 width=129 行、height=512 簇
+            let w = 129, h = 512
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: w, height: h, mipmapped: false)
+            td.usage = .shaderRead
+            guard let pr = device.makeTexture(descriptor: td), let cs = device.makeTexture(descriptor: td) else { return nil }
+            var prData = [Float](repeating: 0, count: w * h * 4)
+            var csData = [Float](repeating: 0, count: w * h * 4)
+            let n = min(lights.count, 128)
+            func put(_ arr: inout [Float], _ x: Int, _ y: Int, _ v: SIMD4<Float>) {
+                let i = (y * 129 + x) * 4
+                arr[i] = v.x; arr[i + 1] = v.y; arr[i + 2] = v.z; arr[i + 3] = v.w
+            }
+            for c in 0..<h {
+                let hdr = SIMD4<Float>(Float(c), Float(512 - c), Float(n), 0)
+                put(&prData, 0, c, hdr); put(&csData, 0, c, hdr)
+                for i in 0..<n {
+                    let l = lights[i]
+                    put(&prData, i + 1, c, SIMD4<Float>(l.pos.x, l.pos.y, l.pos.z, l.radius * l.radius)) // PR.w=radius² ⇒ ratio=clamp(radius²/d²)
+                    put(&csData, i + 1, c, SIMD4<Float>(l.color.x, l.color.y, l.color.z, 0))            // CS.w 必须 0
+                }
+            }
+            prData.withUnsafeBytes { pr.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0,
+                                               withBytes: $0.baseAddress!, bytesPerRow: w * 16) }
+            csData.withUnsafeBytes { cs.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0,
+                                               withBytes: $0.baseAddress!, bytesPerRow: w * 16) }
+            return (pr, cs)
+        }
+
         let loader = MTKTextureLoader(device: device)
         let imgRoot = root.appendingPathComponent("Data/Images/Bin")
         func loadTex(_ n: String) -> MTLTexture? {
@@ -174,6 +206,19 @@ final class TerrainPass {
                 Boot.log("云体积 64³ 已载入")
             }
         } else { Boot.log("云体积缺失") }
+        // 关卡里的 5 个 PointLight（TGCL 只序列化 transform，96 B 记录：id@0 / transform@16 / enabled@80）
+        // 均匀缩放当作光照半径；颜色取 EnvNode AmbiencePointLight.color × intensity（u_pointLight 同源）
+        let plColor = SIMD3<Float>(0.0155, 0.0476, 0.1718) * 10.0
+        let levelLights: [(pos: SIMD3<Float>, radius: Float, color: SIMD3<Float>)] = [
+            (SIMD3(-307.41, 43.14, 468.34), 20, plColor),
+            (SIMD3(-386.05, 8.08, 431.77), 3, plColor),
+            (SIMD3(2.4565, 6.2585, -2.8799), 1, plColor),
+            (SIMD3(-314.18, 131.89, 587.20), 20, plColor),
+            (SIMD3(10.7636, 4.6662, -37.465), 0.5, plColor),
+        ]
+        let lightAtlas = makeLightAtlas(levelLights)
+        Boot.log("光簇图集 \(levelLights.count) 灯 / \(lightAtlas == nil ? "失败" : "已生成")")
+
         let grassMask = loadTex("GrassMask"), grassN0 = loadTex("GrassNorTex0"), grassN1 = loadTex("GrassNorTex1")
         let sandMask = loadTex("SandMask"), sandNoise = loadTex("SandNoiseGray04")
         let cliffSh = loadTex("CliffSh"), cliffWetSh = loadTex("CliffWetSh")
@@ -264,7 +309,11 @@ final class TerrainPass {
             for (slotName, slotIdx) in map {
                 if slotName == "u_cloudNoise3D" {
                     slots[slotIdx] = cloudVol
-                } else if slotName == "u_lightPRTex" || slotName == "u_lightCSTex" || slotName == "u_waterSim" {
+                } else if slotName == "u_lightPRTex" {
+                    slots[slotIdx] = lightAtlas?.0 ?? white
+                } else if slotName == "u_lightCSTex" {
+                    slots[slotIdx] = lightAtlas?.1 ?? white
+                } else if slotName == "u_waterSim" {
                     slots[slotIdx] = white
                 } else if slotName == "u_probeCube" {
                     slots[slotIdx] = cube
