@@ -41,7 +41,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     private var view3d: MetalView!
     private var segmented: UISegmentedControl!
     private var info: UILabel!
-    private let levels = ["CandleSpace", "CarryLand3"]
+    private let levelIDs = ["CandleSpace", "CarryLand3", "Prairie_ButterflyFields", "Prairie_Village", "Dawn_TrialsEarth", "Night_JarCave"]
+    private let levels = ["烛窟", "搬运岛", "蝶原", "草原村", "土试炼", "罐洞"]
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -59,7 +60,9 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         view.addSubview(view3d)
 
         segmented = UISegmentedControl(items: levels)
+        segmented.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12, weight: .medium)], for: .normal)
         segmented.selectedSegmentIndex = 0
+        segmented.apportionsSegmentWidthsByContent = true
         segmented.translatesAutoresizingMaskIntoConstraints = false
         segmented.addTarget(self, action: #selector(changeLevel), for: .valueChanged)
         segmented.backgroundColor = UIColor(white: 0.1, alpha: 0.9)
@@ -91,7 +94,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         // 先读上一轮的启动日志：没有「first frame」就说明上次启动阶段崩了，把断点留住
         let prevLog = Boot.tail(30)
         Boot.reset()
-        load(level: levels[0])
+        load(level: levelIDs[0])
         if !prevLog.isEmpty && !prevLog.contains("first frame"),
            let last = prevLog.split(separator: "\n").last {
             info.text = "上次断在：" + String(last)
@@ -117,7 +120,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     }
 
     @objc private func changeLevel() {
-        load(level: levels[max(0, segmented.selectedSegmentIndex)])
+        load(level: levelIDs[max(0, segmented.selectedSegmentIndex)])
     }
 
     @objc private func onPinch(_ g: UIPinchGestureRecognizer) {

@@ -472,13 +472,16 @@ final class MetalRenderer {
         man = m; levelName = level
         waterY = m.seaLevel ?? -5
 
-        guard let vb = try? Data(contentsOf: root.appendingPathComponent("\(level).verts")),
-              let ib = try? Data(contentsOf: root.appendingPathComponent("\(level).idx")), !vb.isEmpty, !ib.isEmpty else {
-            lastError = "顶点/索引数据缺失 \(level)"; return
+        // 纯地形关卡（ranges 为空）不需要 .verts/.idx，只有 GEO0 的 .terrain.bin
+        if !m.ranges.isEmpty {
+            guard let vb = try? Data(contentsOf: root.appendingPathComponent("\(level).verts")),
+                  let ib = try? Data(contentsOf: root.appendingPathComponent("\(level).idx")), !vb.isEmpty, !ib.isEmpty else {
+                lastError = "顶点/索引数据缺失 \(level)"; return
+            }
+            vbuf = vb.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!, length: $0.count, options: .storageModeShared) }
+            ibuf = ib.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!, length: $0.count, options: .storageModeShared) }
+            guard vbuf != nil, ibuf != nil else { lastError = "顶点/索引 buffer 创建失败"; return }
         }
-        vbuf = vb.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!, length: $0.count, options: .storageModeShared) }
-        ibuf = ib.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!, length: $0.count, options: .storageModeShared) }
-        guard vbuf != nil, ibuf != nil else { lastError = "顶点/索引 buffer 创建失败"; return }
 
         // 取景：三角形数加权落在最密的一簇
         let mm = m
