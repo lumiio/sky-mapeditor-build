@@ -921,21 +921,18 @@ final class MetalRenderer {
             up.colorAttachments[0].loadAction = .dontCare
             up.colorAttachments[0].storeAction = .store
             if let uenc = cb.makeRenderCommandEncoder(descriptor: up) {
-                struct FU { var eyePos: SIMD4<Float>; var sunDir: SIMD4<Float>; var sunColor: SIMD4<Float>; var sunSize: SIMD4<Float>
-                            var fogDH: SIMD4<Float>; var atmDen: SIMD4<Float>; var atmSample: SIMD4<Float>
-                            var avgSkybox: SIMD4<Float>; var atmSun: SIMD4<Float>; var earth: SIMD4<Float>; var vp: SIMD4<Float>; var avgLum: SIMD4<Float> }
-                var fu = FU(eyePos: SIMD4<Float>(eye, 1), sunDir: SIMD4<Float>(sunDir, 0),
-                            sunColor: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
-                            sunSize: SIMD4<Float>(envNum("sunSize", 0), 0, envNum("sunSize", 0), 0),
-                            fogDH: SIMD4<Float>(envNum("fogDensity", 1), envNum("fogHeight", 0.3), 0, 0),
-                            atmDen: SIMD4<Float>(26.0, 0, 0, 0),
-                            atmSample: SIMD4<Float>(1, 0, 0, 0),
-                            avgSkybox: envColor("tintTop", SIMD3<Float>(0.02, 0.05, 0.1)),
-                            atmSun: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
-                            earth: SIMD4<Float>(0, -50000, 0, 50000),
-                            vp: SIMD4<Float>(Float(w), Float(h), 1, 0), avgLum: SIMD4<Float>(averageLum, 0, 0, 0))
+                // FogUpsample 的 air 布局（IR 签名）：buf0=16B（未用）、buf1=PerObject 16B（抖动偏移）、buf2=PerFrame 1584B
+                var fogObj = SIMD4<Float>(0, 0, 0, 0)
+                var fogF = skyF
+                fogF.u_fogDensityHeightDist = (envNum("fogDensity", 1), envNum("fogHeight", 0.1), envNum("drawDistance", 15000))
+                fogF.u_atmosphereDensity = envNum("atmosphereDensity", 1)
+                fogF.u_averageSkyboxColor = envColor4("tintTop", SIMD4<Float>(0.0216, 0.0928, 0.3301, 1))
+                fogF.u_atmosphereSunColor = envColor4("sunColor", SIMD4<Float>(0.0825, 0.1882, 0.7490, 1))
+                fogF.u_earthPosRad = (0, 0, 0, 0)
+                fogF.u_camNearPlane = (nearD, farD, 0, 0)
                 uenc.setRenderPipelineState(fogUpsamplePipe)
-                uenc.setFragmentBytes(&fu, length: MemoryLayout<FU>.stride, index: 1)
+                uenc.setFragmentBytes(&fogObj, length: 16, index: 1)
+                uenc.setFragmentBytes(&fogF, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
                 uenc.setFragmentTexture(sceneTex2, index: 0)
                 uenc.setFragmentTexture(fogTex, index: 2)
                 uenc.setFragmentTexture(fallbackTex, index: 3)
