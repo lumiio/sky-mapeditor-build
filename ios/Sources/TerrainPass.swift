@@ -21,6 +21,18 @@ struct TerrainMeta: Codable {
     let ranges: [TerrainRangeMeta]
 }
 
+struct MaterialDef: Codable {
+    let id: Int
+    let shader: String
+    let color: [Float]
+    let metalness: Float
+    let roughness: Float
+    let uvScale: Float
+    let minWeight: Int
+    let stopWeight: Int
+    let textures: [String: String]
+}
+
 /// 每个家族的 PerObjectUniforms 布局（来自各 vs metallib 的 air.struct_type_info）
 private struct FamilySpec {
     let shader: String
@@ -30,21 +42,22 @@ private struct FamilySpec {
     let colorOffset: Int
     let uvScaleOffset: Int
     let metalnessOffset: Int   // -1 表示该结构没有 u_matMetalness
+    let defaultRough: Float
 }
 
 private let FAMILIES: [FamilySpec] = [
     FamilySpec(shader: "GrassShMesh", vs: "GrassShMesh-22h.ios.vs",
                fs: "GrassShMesh-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0),
     FamilySpec(shader: "SandShMeshDecal", vs: "SandShMeshDecal-22h.ios.vs",
                fs: "SandShMeshDecal-22h.ios.fs", objSize: 160,
-               colorOffset: 144, uvScaleOffset: 156, metalnessOffset: -1),
+               colorOffset: 144, uvScaleOffset: 156, metalnessOffset: -1, defaultRough: 0.5),
     FamilySpec(shader: "RockFaceShMeshDecal", vs: "RockFaceShMeshDecal-22h.ios.vs",
                fs: "RockFaceShMeshDecal-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0),
     FamilySpec(shader: "RockFaceRainShMeshDecal", vs: "RockFaceRainShMeshDecal-22h.ios.vs",
                fs: "RockFaceRainShMeshDecal-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0),
 ]
 
 final class TerrainPass {
@@ -56,9 +69,14 @@ final class TerrainPass {
     private var pipes: [String: MTLRenderPipelineState] = [:] // key = shader
     private var objBufs: [String: MTLBuffer] = [:]            // key = shader
     private var texSets: [String: [MTLTexture?]] = [:]        // key = "<shader>/<material>"
+    private var roughs: [String: Float] = [:]                 // key 同上（fs 的 u_matRoughness）
+    private var mats: [Int: MaterialDef] = [:]
     private var depth: MTLDepthStencilState?
     private var sampler: MTLSamplerState?
-    private var rough: Float = 0.85
+
+    private func famDefaultRough(_ shader: String) -> Float {
+        FAMILIES.first { $0.shader == shader }?.defaultRough ?? 1
+    }
 
     init?(device: MTLDevice) {
         self.device = device
@@ -81,6 +99,11 @@ final class TerrainPass {
             for r in m.ranges { groups["\(r.shader)/\(r.material)", default: []].append(r) }
             Boot.log("terrain meta: \(m.vertexCount) 顶点 / \(m.ranges.count) 区间 / \(groups.count) 组")
         } else { Boot.log("terrain meta 解码失败"); return nil }
+        if let md = try? Data(contentsOf: root.appendingPathComponent("CandleSpace.materials.json")),
+           let list = try? JSONDecoder().decode([MaterialDef].self, from: md) {
+            for m in list { mats[m.id] = m }
+            Boot.log("原版材质表: \(list.count) 条")
+        } else { Boot.log("材质表缺失") }
 
         let ds = MTLDepthStencilDescriptor()
         ds.depthCompareFunction = .lessEqual
@@ -166,36 +189,68 @@ final class TerrainPass {
                 pipes[fam.shader] = try device.makeRenderPipelineState(descriptor: rpd)
                 Boot.log("\(fam.shader) 管线就绪 (PerObject \(fam.objSize)B)")
             } catch { Boot.log("\(fam.shader) 管线失败: \(error.localizedDescription)"); continue }
+        }
 
+        // 槽位按各 fs 的 air.location_index（slotName → index）
+        let slotMap: [String: [String: Int]] = [
+            "GrassShMesh": ["u_lightPRTex": 3, "u_lightCSTex": 4, "u_grassMaskTex": 5,
+                            "u_grassNorm1Tex": 6, "u_grassNorm2Tex": 7],
+            "SandShMeshDecal": ["u_waterSim": 3, "u_lightPRTex": 4, "u_lightCSTex": 5,
+                                "u_grassMaskTexture": 6, "u_normalTex": 7],
+            "RockFaceShMeshDecal": ["u_probeCube": 3, "u_lightPRTex": 4, "u_lightCSTex": 5,
+                                    "u_topGeoTexture": 6, "u_sideGeoTexture": 7],
+            "RockFaceRainShMeshDecal": ["u_probeCube": 3, "u_lightPRTex": 4, "u_lightCSTex": 5,
+                                        "u_topGeoTexture": 6, "u_sideGeoTexture": 7],
+        ]
+        var texCache: [String: MTLTexture?] = [:]
+        func tex(_ name: String, _ isCube: Bool = false) -> MTLTexture? {
+            if let c = texCache[name] { return c }
+            let t = isCube ? nil : loadTex(name)
+            texCache[name] = t
+            return t
+        }
+
+        for (key, ranges) in groups {
+            let shader = String(key.split(separator: "/").first ?? "")
+            let matId = Int(key.split(separator: "/").last ?? "") ?? 0
+            guard let fam = FAMILIES.first(where: { $0.shader == shader }) else { continue }
+            let def = mats[matId]
+
+            // PerObject：颜色/uvScale/metalness 取原版材质表；缺失则白/1/0
             var obj = [UInt8](repeating: 0, count: fam.objSize)
             obj.withUnsafeMutableBytes { raw in
                 let f = raw.bindMemory(to: Float.self)
                 let o = fam.colorOffset / 4
-                f[o] = 1; f[o + 1] = 1; f[o + 2] = 1
-                f[fam.uvScaleOffset / 4] = 1
-                if fam.metalnessOffset >= 0 { f[fam.metalnessOffset / 4] = 0 }
+                let c = def?.color ?? [1, 1, 1]
+                f[o] = c.count > 0 ? c[0] : 1
+                f[o + 1] = c.count > 1 ? c[1] : 1
+                f[o + 2] = c.count > 2 ? c[2] : 1
+                f[fam.uvScaleOffset / 4] = def?.uvScale ?? 1
+                if fam.metalnessOffset >= 0 { f[fam.metalnessOffset / 4] = def?.metalness ?? 0 }
             }
-            objBufs[fam.shader] = obj.withUnsafeBytes {
+            objBufs[key] = obj.withUnsafeBytes {
                 device.makeBuffer(bytes: $0.baseAddress!, length: fam.objSize, options: .storageModeShared)
             }
+            roughs[key] = def?.roughness ?? fam.defaultRough
+
+            // 贴图：默认 PR/CS/waterSim 用 1×1 白，probeCube 用 1×1 cube；其余按材质表的 texture 名取包内原图
+            var slots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil]
+            let map = slotMap[shader] ?? [:]
+            for (slotName, slotIdx) in map {
+                if slotName == "u_lightPRTex" || slotName == "u_lightCSTex" || slotName == "u_waterSim" {
+                    slots[slotIdx] = white
+                } else if slotName == "u_probeCube" {
+                    slots[slotIdx] = cube
+                } else if let file = def?.textures[slotName] {
+                    slots[slotIdx] = tex(file)
+                } else {
+                    slots[slotIdx] = white
+                    Boot.log("材质 \(matId) 缺 \(slotName)")
+                }
+            }
+            texSets[key] = slots
         }
-
-        func slots(_ t3: MTLTexture?, _ t4: MTLTexture?, _ t5: MTLTexture?, _ t6: MTLTexture?, _ t7: MTLTexture?)
-            -> [MTLTexture?] { [nil, nil, nil, t3, t4, t5, t6, t7] }
-
-        // 槽位按各 fs 的 air.location_index：Grass 3=PR 4=CS 5=Mask 6=Norm1 7=Norm2
-        // Sand/RockFace 3=waterSim|probeCube 4=PR 5=CS 6=topGeo|mask 7=sideGeo|normal
-        texSets["GrassShMesh/48"] = slots(white, white, grassMask, grassN0, grassN1)
-        texSets["SandShMeshDecal/32"] = slots(white, white, white, sandMask, sandNoise)
-        texSets["RockFaceShMeshDecal/16"] = slots(cube, white, white, cliffSh, rockHeight)
-        texSets["RockFaceShMeshDecal/17"] = slots(cube, white, white, soilSh, rockHeight)
-        texSets["RockFaceRainShMeshDecal/28"] = slots(cube, white, white, cliffWetSh, rockHeight)
-
-        for key in groups.keys where texSets[key] == nil {
-            let shader = String(key.split(separator: "/").first ?? "")
-            texSets[key] = texSets.first { $0.key.hasPrefix(shader + "/") }?.value
-        }
-        Boot.log("地形家族: \(pipes.keys.sorted().joined(separator: ",")) / 组 \(groups.keys.count)")
+        Boot.log("地形组资源就绪 \(texSets.count) 组 / 管线 \(pipes.count)")
     }
 
     func encode(_ enc: MTLRenderCommandEncoder, perFrame: inout PerFrameUniforms, perPass: SIMD4<Float>) {
@@ -203,8 +258,6 @@ final class TerrainPass {
         enc.setDepthStencilState(depth)
         enc.setVertexBuffer(vbuf, offset: 0, index: 1)
         enc.setVertexBytes(&perFrame, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
-        var ro: Float = rough
-        enc.setFragmentBytes(&ro, length: 4, index: 0)
         var pp = perPass
         enc.setFragmentBytes(&pp, length: 16, index: 1)
         enc.setFragmentBytes(&perFrame, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
@@ -212,15 +265,17 @@ final class TerrainPass {
 
         for (key, ranges) in groups {
             let shader = String(key.split(separator: "/").first ?? "")
-            guard let pipe = pipes[shader], let objBuf = objBufs[shader] else { continue }
+            guard let pipe = pipes[shader], let objBuf = objBufs[key] else { continue }
             enc.setRenderPipelineState(pipe)
             enc.setVertexBuffer(objBuf, offset: 0, index: 0)
+            var roughVal = roughs[key] ?? famDefaultRough(shader)
+            enc.setFragmentBytes(&roughVal, length: 4, index: 0)
             if let set = texSets[key] {
                 for (i, t) in set.enumerated() where t != nil { enc.setFragmentTexture(t, index: i) }
             }
-            for r in ranges {
-                enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
-                                          indexBuffer: ibuf, indexBufferOffset: r.start * 4)
+            for range in ranges {
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: range.count, indexType: .uint32,
+                                          indexBuffer: ibuf, indexBufferOffset: range.start * 4)
             }
         }
     }
