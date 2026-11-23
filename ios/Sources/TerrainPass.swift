@@ -6,7 +6,7 @@ import simd
 // 地形通道：顶点/索引/材质区间来自游戏本体 BstBaked.meshes#GEO0（30,838 顶点 / 408 区间），
 // 着色器直接用游戏包里的原版 metallib（GrassShMesh-22h.ios.vs/fs），不翻译、不重写。
 // 顶点 36 B：pos f32×3 | normal u8x4 | mat u8x4 | weight u8x4 | in2 u8x4 | in3 u8x4 | in4 u8x4
-// 属性绑定（按 IR 的 6 个 air.vertex_input）：a_position@0 / a_normal@12 / a_color@20 / a_light0@24 / a_light1@28 / a_light2@32
+// 属性绑定（按 IR 的 6 个 air.vertex_input）：a_position@0 / a_normal@12 / a_color@24 / a_light0@28 / a_light1@32 / a_light2@20
 struct TerrainVertex {
     var pos: (Float, Float, Float) = (0, 0, 0)
     var normal: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
@@ -85,10 +85,10 @@ final class TerrainPass {
         let vd = MTLVertexDescriptor()
         vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 1
         vd.attributes[1].format = .uchar4Normalized; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 1
-        vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 20; vd.attributes[2].bufferIndex = 1
-        vd.attributes[3].format = .uchar4Normalized; vd.attributes[3].offset = 24; vd.attributes[3].bufferIndex = 1
-        vd.attributes[4].format = .uchar4Normalized; vd.attributes[4].offset = 28; vd.attributes[4].bufferIndex = 1
-        vd.attributes[5].format = .uchar4Normalized; vd.attributes[5].offset = 32; vd.attributes[5].bufferIndex = 1
+        vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 1
+        vd.attributes[3].format = .uchar4Normalized; vd.attributes[3].offset = 28; vd.attributes[3].bufferIndex = 1
+        vd.attributes[4].format = .uchar4Normalized; vd.attributes[4].offset = 32; vd.attributes[4].bufferIndex = 1
+        vd.attributes[5].format = .uchar4Normalized; vd.attributes[5].offset = 20; vd.attributes[5].bufferIndex = 1
         vd.layouts[1].stride = 36
         vd.layouts[1].stepFunction = .perVertex
         vd.layouts[1].stepRate = 1
