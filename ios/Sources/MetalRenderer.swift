@@ -1076,14 +1076,13 @@ final class MetalRenderer {
             if let tenc = cbX.makeRenderCommandEncoder(descriptor: tp) {
                 struct TUni { var bloomTint: SIMD4<Float>; var bloomParams: SIMD4<Float>
                               var viewportSize: SIMD4<Float>; var exposure: SIMD4<Float> }
-                // 自动曝光：server.cjs 里 tonemap 的亮度就是雾后 HDR 的几何平均 _e，
-                // 目标落在 0.18 中间灰（这正是你手动拖到 7.7× 时看到的亮度），除以 _e 得到倍率。
-                // 再做上下限，防止空场景/全黑帧把倍率拉到炸掉。
-                let autoScale = min(40.0, max(0.5, 0.18 / max(averageLum, 1e-3)))
+                // 自动曝光在雾/穹顶开关变化时会把亮度在 0.6×–40× 之间来回甩，看着比固定还乱；
+                // 改回固定倍率（默认 7.6×，就是上次你自己拖到的那个位置），只在滑杆上手动调。
+                _ = averageLum
                 var tu = TUni(bloomTint: envColor("bloomTint", SIMD3<Float>(1, 1, 1)),
                               bloomParams: SIMD4<Float>(envNum("bloomIntensity", 0), 0, 0, 0),
                               viewportSize: SIMD4<Float>(Float(w), Float(h), 1, 0),
-                              exposure: SIMD4<Float>(envNum("exposure", 1) * exposureGain * autoScale, 0, 0, 0))
+                              exposure: SIMD4<Float>(envNum("exposure", 1) * exposureGain, 0, 0, 0))
                 tenc.setRenderPipelineState(tonemapPipe)
                 tenc.setFragmentBytes(&tu, length: MemoryLayout<TUni>.stride, index: 1)
                 if frameIdx == 0 { Boot.log("调试：雾后处理旁路 debugSkipFogPost=\(debugSkipFogPost)（tonemap 直读 sceneTex2）") }

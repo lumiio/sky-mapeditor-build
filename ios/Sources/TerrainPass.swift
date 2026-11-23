@@ -337,9 +337,11 @@ final class TerrainPass {
                 if slotName == "u_cloudNoise3D" {
                     slots[slotIdx] = cloudVol
                 } else if slotName == "u_lightPRTex" {
-                    slots[slotIdx] = lightAtlas?.0 ?? white
+                    // 原版是引擎烘的光探针图集；我们按 5 盏点光自己排的图集索引不对，采出来基本是 0，
+                    // 结果就是崖壁整块发黑。与其给它错的，不如给常量 1，让 albedo 正常显示。
+                    slots[slotIdx] = white
                 } else if slotName == "u_lightCSTex" {
-                    slots[slotIdx] = lightAtlas?.1 ?? white
+                    slots[slotIdx] = white
                 } else if slotName == "u_waterSim" {
                     slots[slotIdx] = white
                 } else if slotName == "u_probeCube" {
