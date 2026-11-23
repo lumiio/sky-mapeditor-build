@@ -43,13 +43,12 @@ def main():
     need(re.search(r"u_averageProbeColor\s*=\s*\(averageSky\.x", s) is not None, "u_averageProbeColor = averageSky")
 
     # 3.5) FogUpsample 必须按 IR 的 location_index 绑纹理（3..10），绑错会让原版 fs 读空 → 输出恒 1.0 → 整屏黑
-    for idx, name in ((3, "u_atmosphereTex"), (4, "u_fogTex"), (5, "u_opaqueColor"),
-                      (6, "u_opaqueDepth"), (7, "u_alphaTex0"), (8, "u_alphaTex1"),
-                      (9, "u_cloudDepth"), (10, "u_cloudFog")):
+    for idx, name in ((0, "scene"), (2, "fogTex"), (3, "atmoTex")):
         m = re.search(r"uenc\.setFragmentTexture\([^\n]*index: %d\)" % idx, s)
-        need(m is not None, f"FogUpsample {name} 绑在 texture {idx}")
-    need(re.search(r"for i in 3...10 \{ uenc\.setFragmentSamplerState", s) is not None,
-         "FogUpsample sampler 3..10 全绑")
+        need(m is not None, f"fogUpsampleFS {name} 绑在 texture {idx}")
+    need(re.search(r"for i in 0...3 \{ uenc\.setFragmentSamplerState", s) is not None,
+         "fogUpsampleFS sampler 0..3 全绑")
+    need("var fogF = FUF(" in s or "FUF(" in s, "雾常量按 FU 结构绑 buffer(1)，不是 PerFrame 1584B")
 
     # 4) 日志不许每帧刷（真机 boot.log 已被刷爆，掩盖其它信息）
     need(re.search(r"if frameIdx == 0 \{\s*\n\s*Boot\.log\(\"结构体尺寸", s) is not None,
