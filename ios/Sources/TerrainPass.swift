@@ -1,52 +1,62 @@
 import Foundation
 import Metal
 import MetalKit
-import simd
 
-// 地形通道：顶点/索引/材质区间来自游戏本体 BstBaked.meshes#GEO0（30,838 顶点 / 408 区间），
-// 着色器直接用游戏包里的原版 metallib（GrassShMesh-22h.ios.vs/fs），不翻译、不重写。
-// 顶点 36 B：pos f32×3 | normal u8x4 | mat u8x4 | weight u8x4 | in2 u8x4 | in3 u8x4 | in4 u8x4
-// 属性绑定（按 IR 的 6 个 air.vertex_input）：a_position@0 / a_normal@12 / a_color@24 / a_light0@28 / a_light1@32 / a_light2@20
-struct TerrainVertex {
-    var pos: (Float, Float, Float) = (0, 0, 0)
-    var normal: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
-    var mat: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
-    var weight: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
-    var in2: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
-    var in3: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
-    var in4: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
+// 地形通道：直载游戏包原版 iOS metallib（Grass / Sand / Cliff / CliffWet 四家族）。
+// 顶点布局、PerObject 布局、贴图槽位全部取自各 metallib 的 IR 元数据（air.struct_type_info / air.location_index），不做自编。
+
+struct TerrainRangeMeta: Codable {
+    let start: Int
+    let count: Int
+    let material: Int
+    let name: String
+    let shader: String
 }
 
-// 原版 PerObjectUniforms（GrassShMesh-22h.ios.vs.ll 的 air.struct_type_info：112 B / align 4）
-struct TerrainPerObject {
-    var model: (Float, Float, Float, Float, Float, Float, Float, Float,
-                Float, Float, Float, Float, Float, Float, Float, Float) = (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
-    var reflected: Float = 0          // +64
-    var pad0: (Float, Float, Float) = (0, 0, 0)   // +68  (char[12])
-    var matColor: (Float, Float, Float) = (1, 1, 1) // +80 packed_float3
-    var matUvScale: Float = 1         // +92
-    var matMetalness: Float = 0       // +96
-    var pad1: (Float, Float, Float) = (0, 0, 0)   // +100 (char[12])
-}
-
-struct TerrainRangeMeta: Decodable {
-    let start: Int, count: Int, material: Int, name: String, shader: String?
-}
-
-struct TerrainMeta: Decodable {
-    let level: String, stride: Int, vertexCount: Int, indexCount: Int
+struct TerrainMeta: Codable {
+    let level: String?
+    let stride: Int?
+    let vertexCount: Int
+    let indexCount: Int
     let ranges: [TerrainRangeMeta]
 }
+
+/// 每个家族的 PerObjectUniforms 布局（来自各 vs metallib 的 air.struct_type_info）
+private struct FamilySpec {
+    let shader: String
+    let vs: String
+    let fs: String
+    let objSize: Int
+    let colorOffset: Int
+    let uvScaleOffset: Int
+    let metalnessOffset: Int   // -1 表示该结构没有 u_matMetalness
+}
+
+private let FAMILIES: [FamilySpec] = [
+    FamilySpec(shader: "GrassShMesh", vs: "GrassShMesh-22h.ios.vs",
+               fs: "GrassShMesh-22h.ios.fs", objSize: 112,
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96),
+    FamilySpec(shader: "SandShMeshDecal", vs: "SandShMeshDecal-22h.ios.vs",
+               fs: "SandShMeshDecal-22h.ios.fs", objSize: 160,
+               colorOffset: 144, uvScaleOffset: 156, metalnessOffset: -1),
+    FamilySpec(shader: "RockFaceShMeshDecal", vs: "RockFaceShMeshDecal-22h.ios.vs",
+               fs: "RockFaceShMeshDecal-22h.ios.fs", objSize: 112,
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96),
+    FamilySpec(shader: "RockFaceRainShMeshDecal", vs: "RockFaceRainShMeshDecal-22h.ios.vs",
+               fs: "RockFaceRainShMeshDecal-22h.ios.fs", objSize: 112,
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96),
+]
 
 final class TerrainPass {
     private let device: MTLDevice
     private var vbuf: MTLBuffer?
     private var ibuf: MTLBuffer?
-    private var pipe: MTLRenderPipelineState?
-    private var depth: MTLDepthStencilState?
     private var meta: TerrainMeta?
-    private var grassRanges: [TerrainRangeMeta] = []
-    private var texSlots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil]
+    private var groups: [String: [TerrainRangeMeta]] = [:]   // key = "<shader>/<material>"
+    private var pipes: [String: MTLRenderPipelineState] = [:] // key = shader
+    private var objBufs: [String: MTLBuffer] = [:]            // key = shader
+    private var texSets: [String: [MTLTexture?]] = [:]        // key = "<shader>/<material>"
+    private var depth: MTLDepthStencilState?
     private var sampler: MTLSamplerState?
     private var rough: Float = 0.85
 
@@ -54,7 +64,7 @@ final class TerrainPass {
         self.device = device
         guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else { return nil }
         guard let data = try? Data(contentsOf: root.appendingPathComponent("CandleSpace.terrain.bin")),
-              data.count > 8 else { return nil }
+              data.count > 8 else { Boot.log("地形 bin 缺失"); return nil }
         let vc = data.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) }
         let ic = data.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt32.self) }
         let vbytes = Int(vc) * 36, ibytes = Int(ic) * 4
@@ -68,41 +78,9 @@ final class TerrainPass {
         if let md = try? Data(contentsOf: root.appendingPathComponent("CandleSpace.terrain.meta.json")),
            let m = try? JSONDecoder().decode(TerrainMeta.self, from: md) {
             meta = m
-            grassRanges = m.ranges.filter { $0.shader == "GrassShMesh" }
-            Boot.log("terrain meta: \(m.vertexCount) 顶点 / \(m.ranges.count) 区间 / 草地面 \(grassRanges.count) 区间")
-        } else { Boot.log("terrain meta 解码失败") }
-
-        // 原版 metallib（游戏包 Data/Shaders/Bin）
-        let sub = "Assets/Data/Shaders/Bin"
-        guard let vu = Bundle.main.url(forResource: "GrassShMesh-22h.ios.vs", withExtension: "metallib", subdirectory: sub),
-              let fu = Bundle.main.url(forResource: "GrassShMesh-22h.ios.fs", withExtension: "metallib", subdirectory: sub),
-              let vlib = try? device.makeLibrary(URL: vu), let flib = try? device.makeLibrary(URL: fu),
-              let vfn = vlib.makeFunction(name: "vsmain"), let ffn = flib.makeFunction(name: "fsmain") else {
-            Boot.log("原版 GrassShMesh metallib 加载失败"); return nil
-        }
-        Boot.log("原版 GrassShMesh metallib 已加载")
-
-        // 顶点布局来自 GEO0（LevelGeoMeshVertex 36B）：pos@0 / normal@12(SNORM) / material@16 / weight@20 / input2@24 / input3@28 / input4@32
-        // 属性语义由 vs IR 反推：loc2 a_light0=in2、loc3 a_light1=in3、loc4 a_light2=in4、loc5 a_color.w=weight0
-        let vd = MTLVertexDescriptor()
-        vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 1
-        vd.attributes[1].format = .char4Normalized; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 1
-        vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 1
-        vd.attributes[3].format = .uchar4Normalized; vd.attributes[3].offset = 28; vd.attributes[3].bufferIndex = 1
-        vd.attributes[4].format = .uchar4Normalized; vd.attributes[4].offset = 32; vd.attributes[4].bufferIndex = 1
-        vd.attributes[5].format = .uchar4Normalized; vd.attributes[5].offset = 20; vd.attributes[5].bufferIndex = 1
-        vd.layouts[1].stride = 36
-        vd.layouts[1].stepFunction = .perVertex
-        vd.layouts[1].stepRate = 1
-
-        let rpd = MTLRenderPipelineDescriptor()
-        rpd.vertexFunction = vfn
-        rpd.fragmentFunction = ffn
-        rpd.vertexDescriptor = vd
-        rpd.colorAttachments[0].pixelFormat = .rgba16Float
-        rpd.depthAttachmentPixelFormat = .depth32Float
-        do { pipe = try device.makeRenderPipelineState(descriptor: rpd) }
-        catch { Boot.log("地形管线编译失败: \(error.localizedDescription)"); return nil }
+            for r in m.ranges { groups["\(r.shader)/\(r.material)", default: []].append(r) }
+            Boot.log("terrain meta: \(m.vertexCount) 顶点 / \(m.ranges.count) 区间 / \(groups.count) 组")
+        } else { Boot.log("terrain meta 解码失败"); return nil }
 
         let ds = MTLDepthStencilDescriptor()
         ds.depthCompareFunction = .lessEqual
@@ -115,15 +93,7 @@ final class TerrainPass {
         sd.mipFilter = .linear
         sampler = device.makeSamplerState(descriptor: sd)
 
-        let loader = MTKTextureLoader(device: device)
-        let imgRoot = root.appendingPathComponent("Data/Images/Bin")
-        func loadTex(_ n: String) -> MTLTexture? {
-            guard let t = try? loader.newTexture(URL: imgRoot.appendingPathComponent("\(n).png"), options: [.SRGB: false]) else {
-                Boot.log("地形贴图缺失 \(n)"); return nil
-            }
-            return t
-        }
-        // 槽位严格取 IR 的 air.location_index：3=u_lightPRTex 4=u_lightCSTex 5=u_grassMaskTex 6=u_grassNorm1Tex 7=u_grassNorm2Tex
+        // 1×1 常量贴图 + 1×1 cube（u_probeCube 在原版声明为 texturecube<float>）
         func solid(_ v: UInt8) -> MTLTexture? {
             let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
             td.usage = .shaderRead
@@ -132,37 +102,126 @@ final class TerrainPass {
             t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &px, bytesPerRow: 4)
             return t
         }
-        var slots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil]
-        slots[3] = solid(255)          // u_lightPRTex（光簇图集，数据待解，暂用 1x1）
-        slots[4] = solid(255)          // u_lightCSTex
-        slots[5] = loadTex("GrassMask")
-        slots[6] = loadTex("GrassNorTex0")
-        slots[7] = loadTex("GrassNorTex1")
-        texSlots = slots
+        func solidCube(_ v: UInt8) -> MTLTexture? {
+            let td = MTLTextureDescriptor()
+            td.textureType = .typeCube
+            td.pixelFormat = .rgba8Unorm
+            td.width = 1; td.height = 1
+            td.mipmapLevelCount = 1
+            td.usage = .shaderRead
+            guard let t = device.makeTexture(descriptor: td) else { return nil }
+            var px: [UInt8] = [v, v, v, v]
+            for f in 0..<6 {
+                t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, slice: f,
+                          withBytes: &px, bytesPerRow: 4, bytesPerImage: 4)
+            }
+            return t
+        }
+
+        let loader = MTKTextureLoader(device: device)
+        let imgRoot = root.appendingPathComponent("Data/Images/Bin")
+        func loadTex(_ n: String) -> MTLTexture? {
+            guard let t = try? loader.newTexture(URL: imgRoot.appendingPathComponent("\(n).png"), options: [.SRGB: false]) else {
+                Boot.log("地形贴图缺失 \(n)"); return nil
+            }
+            return t
+        }
+        let white = solid(255), cube = solidCube(255)
+        let grassMask = loadTex("GrassMask"), grassN0 = loadTex("GrassNorTex0"), grassN1 = loadTex("GrassNorTex1")
+        let sandMask = loadTex("SandMask"), sandNoise = loadTex("SandNoiseGray04")
+        let cliffSh = loadTex("CliffSh"), cliffWetSh = loadTex("CliffWetSh")
+        let rockHeight = loadTex("RockHeightCliffSh"), soilSh = loadTex("SoilSh")
+
+        // 顶点描述符：GEO0 36 B。属性语义由 vs IR 反推
+        // loc0 a_position@0 / loc1 a_normal@12(SNORM) / loc2 a_light0@24 / loc3 a_light1@28 / loc4 a_light2@32 / loc5 a_color@20
+        func vertexDescriptor() -> MTLVertexDescriptor {
+            let vd = MTLVertexDescriptor()
+            vd.attributes[0].format = .float3; vd.attributes[0].offset = 0; vd.attributes[0].bufferIndex = 1
+            vd.attributes[1].format = .char4Normalized; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 1
+            vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 1
+            vd.attributes[3].format = .uchar4Normalized; vd.attributes[3].offset = 28; vd.attributes[3].bufferIndex = 1
+            vd.attributes[4].format = .uchar4Normalized; vd.attributes[4].offset = 32; vd.attributes[4].bufferIndex = 1
+            vd.attributes[5].format = .uchar4Normalized; vd.attributes[5].offset = 20; vd.attributes[5].bufferIndex = 1
+            vd.layouts[1].stride = 36
+            vd.layouts[1].stepFunction = .perVertex
+            vd.layouts[1].stepRate = 1
+            return vd
+        }
+
+        let sub = "Assets/Data/Shaders/Bin"
+        for fam in FAMILIES {
+            guard let vu = Bundle.main.url(forResource: fam.vs, withExtension: "metallib", subdirectory: sub),
+                  let fu = Bundle.main.url(forResource: fam.fs, withExtension: "metallib", subdirectory: sub),
+                  let vlib = try? device.makeLibrary(URL: vu), let flib = try? device.makeLibrary(URL: fu),
+                  let vfn = vlib.makeFunction(name: "vsmain"), let ffn = flib.makeFunction(name: "fsmain") else {
+                Boot.log("\(fam.shader) metallib 加载失败"); continue
+            }
+            let rpd = MTLRenderPipelineDescriptor()
+            rpd.vertexFunction = vfn
+            rpd.fragmentFunction = ffn
+            rpd.vertexDescriptor = vertexDescriptor()
+            rpd.colorAttachments[0].pixelFormat = .rgba16Float
+            rpd.depthAttachmentPixelFormat = .depth32Float
+            do {
+                pipes[fam.shader] = try device.makeRenderPipelineState(descriptor: rpd)
+                Boot.log("\(fam.shader) 管线就绪 (PerObject \(fam.objSize)B)")
+            } catch { Boot.log("\(fam.shader) 管线失败: \(error.localizedDescription)"); continue }
+
+            var obj = [UInt8](repeating: 0, count: fam.objSize)
+            obj.withUnsafeMutableBytes { raw in
+                let f = raw.bindMemory(to: Float.self)
+                let o = fam.colorOffset / 4
+                f[o] = 1; f[o + 1] = 1; f[o + 2] = 1
+                f[fam.uvScaleOffset / 4] = 1
+                if fam.metalnessOffset >= 0 { f[fam.metalnessOffset / 4] = 0 }
+            }
+            objBufs[fam.shader] = obj.withUnsafeBytes {
+                device.makeBuffer(bytes: $0.baseAddress!, length: fam.objSize, options: .storageModeShared)
+            }
+        }
+
+        func slots(_ t3: MTLTexture?, _ t4: MTLTexture?, _ t5: MTLTexture?, _ t6: MTLTexture?, _ t7: MTLTexture?)
+            -> [MTLTexture?] { [nil, nil, nil, t3, t4, t5, t6, t7] }
+
+        // 槽位按各 fs 的 air.location_index：Grass 3=PR 4=CS 5=Mask 6=Norm1 7=Norm2
+        // Sand/RockFace 3=waterSim|probeCube 4=PR 5=CS 6=topGeo|mask 7=sideGeo|normal
+        texSets["GrassShMesh/48"] = slots(white, white, grassMask, grassN0, grassN1)
+        texSets["SandShMeshDecal/32"] = slots(white, white, white, sandMask, sandNoise)
+        texSets["RockFaceShMeshDecal/16"] = slots(cube, white, white, cliffSh, rockHeight)
+        texSets["RockFaceShMeshDecal/17"] = slots(cube, white, white, soilSh, rockHeight)
+        texSets["RockFaceRainShMeshDecal/28"] = slots(cube, white, white, cliffWetSh, rockHeight)
+
+        for key in groups.keys where texSets[key] == nil {
+            let shader = String(key.split(separator: "/").first ?? "")
+            texSets[key] = texSets.first { $0.key.hasPrefix(shader + "/") }?.value
+        }
+        Boot.log("地形家族: \(pipes.keys.sorted().joined(separator: ",")) / 组 \(groups.keys.count)")
     }
 
     func encode(_ enc: MTLRenderCommandEncoder, perFrame: inout PerFrameUniforms, perPass: SIMD4<Float>) {
-        guard let pipe, let vbuf, let ibuf, let depth, let sampler, grassRanges.count > 0 else { return }
-        enc.setRenderPipelineState(pipe)
+        guard let vbuf, let ibuf, let depth, let sampler, !groups.isEmpty else { return }
         enc.setDepthStencilState(depth)
         enc.setVertexBuffer(vbuf, offset: 0, index: 1)
-        var obj = TerrainPerObject()
-        obj.reflected = 0
-        obj.matColor = (1, 1, 1)
-        obj.matUvScale = 1
-        obj.matMetalness = 0
-        enc.setVertexBytes(&obj, length: MemoryLayout<TerrainPerObject>.stride, index: 0)
         enc.setVertexBytes(&perFrame, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
         var ro: Float = rough
         enc.setFragmentBytes(&ro, length: 4, index: 0)
         var pp = perPass
         enc.setFragmentBytes(&pp, length: 16, index: 1)
         enc.setFragmentBytes(&perFrame, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
-        for (i, t) in texSlots.enumerated() where t != nil { enc.setFragmentTexture(t, index: i) }
         for i in 3..<8 { enc.setFragmentSamplerState(sampler, index: i) }
-        for r in grassRanges {
-            enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
-                                      indexBuffer: ibuf, indexBufferOffset: r.start * 4)
+
+        for (key, ranges) in groups {
+            let shader = String(key.split(separator: "/").first ?? "")
+            guard let pipe = pipes[shader], let objBuf = objBufs[shader] else { continue }
+            enc.setRenderPipelineState(pipe)
+            enc.setVertexBuffer(objBuf, offset: 0, index: 0)
+            if let set = texSets[key] {
+                for (i, t) in set.enumerated() where t != nil { enc.setFragmentTexture(t, index: i) }
+            }
+            for r in ranges {
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
+                                          indexBuffer: ibuf, indexBufferOffset: r.start * 4)
+            }
         }
     }
 }
