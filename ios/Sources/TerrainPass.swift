@@ -10,7 +10,7 @@ struct TerrainRangeMeta: Codable {
     let count: Int
     let material: Int
     let name: String
-    let shader: String
+    let shader: String?   // 未支持材质在原版材质表里没有 shader 名，JSON 里是 null
 }
 
 struct TerrainMeta: Codable {
@@ -103,7 +103,9 @@ final class TerrainPass {
         if let md = try? Data(contentsOf: root.appendingPathComponent(level + ".terrain.meta.json")),
            let m = try? JSONDecoder().decode(TerrainMeta.self, from: md) {
             meta = m
-            for r in m.ranges { groups["\(r.shader)/\(r.material)", default: []].append(r) }
+            for r in m.ranges where r.shader != nil {
+                groups["\(r.shader!)/\(r.material)", default: []].append(r)
+            }
             Boot.log("terrain meta: \(m.vertexCount) 顶点 / \(m.ranges.count) 区间 / \(groups.count) 组")
         } else { Boot.log("terrain meta 解码失败"); return nil }
         if let md = try? Data(contentsOf: root.appendingPathComponent("CandleSpace.materials.json")),

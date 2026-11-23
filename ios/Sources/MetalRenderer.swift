@@ -274,6 +274,10 @@ final class MetalRenderer {
     /// 原版 u_averageSkyColor：由引擎对天空盒做均值得到，这里用「把穹顶渲进 32×32 再读回求均值」复现
     var averageSky = SIMD3<Float>(0.05, 0.09, 0.16)
     private let debugSkipWater = true
+    /// 穹顶 pass 暂关：原版 SkyDomeFade 的 vs 是 5 路顶点输入（a_position/a_color/a_normal/a_uv0/a_uv1）+ u_model，
+    /// 要用包里的 UnitSphere.mesh；当前还没解出 .mesh 容器格式，硬画全屏三角形会因顶点缓冲未绑定让整个 command buffer 校验失败、
+    /// 连地形一起丢帧。先关掉，用 EnvNode 的原版 tintMidMid 当 u_averageSkyColor。
+    private let debugSkipSkyDome = true
     private var skyAvgTex: MTLTexture?
     private var frameIdx = 0
 
@@ -759,13 +763,16 @@ final class MetalRenderer {
             skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
             skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
             // 地形片元用 mix(u_averageSkyColor, u_sunColor, a_light1.x) 作为环境光，之前这两个字段是 0 → 全场黑
+            if averageSky.x + averageSky.y + averageSky.z <= 0 {
+                averageSky = avgSkyC   // 均值 pass 拿不到时退回 EnvNode 原版 tintMidMid，避免地形全黑
+            }
             skyF.u_averageSkyColor = (averageSky.x, averageSky.y, averageSky.z)
             skyF.u_averageSkyOcclusion = 1
             skyF.u_averageSkyboxColor = (averageSky.x, averageSky.y, averageSky.z, 1)
             skyF.u_averageProbeColor = (averageSky.x, averageSky.y, averageSky.z, 1)
             var skyP = PerPassUniforms()
             skyP.u_viewportSize = (Float(w), Float(h), 1 / Float(w), 1 / Float(h))
-            if let domePipe {
+            if let domePipe, !debugSkipSkyDome {
                 sky = PerObjectUniforms()
                 sky.u_skyColor = t3p(envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)))
                 sky.u_horizonColor = t3(envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)))
@@ -835,7 +842,7 @@ final class MetalRenderer {
         // 天空均值：把同一个穹顶管路渲进 32×32，读回做算术平均（每 30 帧一次）
         frameIdx += 1
         let doSkyAvg = (frameIdx % 30 == 1)
-        if doSkyAvg, let domePipe, let skyAvgTex {
+        if doSkyAvg, let domePipe, let skyAvgTex, !debugSkipSkyDome {
             let rp2 = MTLRenderPassDescriptor()
             rp2.colorAttachments[0].texture = skyAvgTex
             rp2.colorAttachments[0].loadAction = .clear
@@ -936,7 +943,10 @@ final class MetalRenderer {
                 fogF.u_earthPosRad = (0, 0, 0, 0)
                 fogF.u_camNearPlane = (nearD, farD, 0, 0)
                 uenc.setRenderPipelineState(fogUpsamplePipe)
-                uenc.setFragmentBytes(&fogObj, length: 16, index: 1)
+                // FogUpsample 的 air 绑定（IR location_index）：0=PerObject 16B、1=PerPass 16B(u_viewportSize)、2=PerFrame 1584B
+                var fogPass = SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h))
+                uenc.setFragmentBytes(&fogObj, length: 16, index: 0)
+                uenc.setFragmentBytes(&fogPass, length: 16, index: 1)
                 uenc.setFragmentBytes(&fogF, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
                 uenc.setFragmentTexture(sceneTex2, index: 0)
                 uenc.setFragmentTexture(fogTex, index: 2)
@@ -989,7 +999,7 @@ final class MetalRenderer {
         cb.present(drawable)
         cb.commit()
         // 原版视线自适应：用上一帧 FogUpsample 输出的几何平均亮度做 u_averageLum
-        if doSkyAvg, let skyAvgTex {
+        if doSkyAvg, let skyAvgTex, !debugSkipSkyDome {
             cb.waitUntilCompleted()
             averageSky = averageSkyColor(of: skyAvgTex)
         }
