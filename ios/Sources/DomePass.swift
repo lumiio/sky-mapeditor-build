@@ -175,7 +175,8 @@ final class DomePass {
         // 原版 texturecube 声明里 sampler 的槽位在 .ref 里没有显式编号，0..3 全绑同一个采样器，避免漏绑触发校验失败
         if let sampler {
             for i in 0..<4 { enc.setFragmentSamplerState(sampler, index: i) }
-            enc.setVertexSamplerState(sampler, index: 0)
+            // 原版 vs 的 u_probeCubeSmplr 在 sampler(3)，不是 0
+            for i in 0...3 { enc.setVertexSamplerState(sampler, index: i) }
         }
         enc.drawIndexedPrimitives(type: .triangle, indexCount: ic, indexType: .uint32,
                                   indexBuffer: ibuf, indexBufferOffset: 0)

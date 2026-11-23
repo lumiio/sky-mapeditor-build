@@ -50,6 +50,27 @@ def main():
          "fogUpsampleFS sampler 0..3 全绑")
     need("var fogF = FUF(" in s or "FUF(" in s, "雾常量按 FU 结构绑 buffer(1)，不是 PerFrame 1584B")
 
+    # 3.6) 顶点阶段也要绑 u_probeCube：RockFace / SkyDomeFade 的 vs 里 texture3+sampler3 是 cubemap
+    terr = os.path.join(SRC, "TerrainPass.swift")
+    dome = os.path.join(SRC, "DomePass.swift")
+    if os.path.exists(terr):
+        t = open(terr, encoding="utf8").read()
+        need("let vsCube: Bool" in t, "TerrainPass 有 vsCube 家族标记")
+        need(re.search(r'RockFaceRainShMeshDecal.*vsCube: true', t, re.S) is not None,
+             "RockFaceRainShMeshDecal vsCube = true")
+        need(re.search(r'RockFaceShMeshDecal.*vsCube: true', t, re.S) is not None,
+             "RockFaceShMeshDecal vsCube = true")
+        need("enc.setVertexTexture(probeCube, index: 3)" in t, "地形 vs 绑 u_probeCube 到 texture 3")
+        need("enc.setVertexSamplerState(sampler, index: 3)" in t, "地形 vs 绑 sampler 到 sampler 3")
+    else:
+        need(False, "找不到 TerrainPass.swift")
+    if os.path.exists(dome):
+        d = open(dome, encoding="utf8").read()
+        need("setVertexSamplerState(sampler, index: 3)" in d or "for i in 0...3 { enc.setVertexSamplerState" in d,
+             "穹顶 vs sampler 覆盖 index 3（原版声明在 sampler(3)）")
+    else:
+        need(False, "找不到 DomePass.swift")
+
     # 4) 日志不许每帧刷（真机 boot.log 已被刷爆，掩盖其它信息）
     need(re.search(r"if frameIdx == 0 \{\s*\n\s*Boot\.log\(\"结构体尺寸", s) is not None,
          "结构体尺寸/偏移日志只打一次")

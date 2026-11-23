@@ -44,25 +44,27 @@ private struct FamilySpec {
     let metalnessOffset: Int   // -1 表示该结构没有 u_matMetalness
     let defaultRough: Float
     let hasFragRough: Bool
+    /// 该家族 vs 里是否采样 u_probeCube（原版 RockFace/RockFaceRain 的 vs 有 texture3+sampler3）
+    let vsCube: Bool
 }
 
 private let FAMILIES: [FamilySpec] = [
     FamilySpec(shader: "GrassShMesh", vs: "GrassShMesh-22h.ios.vs",
                fs: "GrassShMesh-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true, vsCube: false),
     FamilySpec(shader: "SandShMeshDecal", vs: "SandShMeshDecal-22h.ios.vs",
                fs: "SandShMeshDecal-22h.ios.fs", objSize: 160,
-               colorOffset: 144, uvScaleOffset: 156, metalnessOffset: -1, defaultRough: 0.5, hasFragRough: true),
+               colorOffset: 144, uvScaleOffset: 156, metalnessOffset: -1, defaultRough: 0.5, hasFragRough: true, vsCube: false),
     FamilySpec(shader: "RockFaceShMeshDecal", vs: "RockFaceShMeshDecal-22h.ios.vs",
                fs: "RockFaceShMeshDecal-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true, vsCube: true),
     FamilySpec(shader: "RockFaceRainShMeshDecal", vs: "RockFaceRainShMeshDecal-22h.ios.vs",
                fs: "RockFaceRainShMeshDecal-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true, vsCube: true),
     // CloudSh：fs 只有 PerFrame(2)，没有 u_matRoughness
     FamilySpec(shader: "CloudSh", vs: "CloudShMesh-22h.ios.vs",
                fs: "CloudShMesh-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: false),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: false, vsCube: false),
 ]
 
 final class TerrainPass {
@@ -78,6 +80,8 @@ final class TerrainPass {
     private var mats: [Int: MaterialDef] = [:]
     private var depth: MTLDepthStencilState?
     private var sampler: MTLSamplerState?
+    /// 1×1 白色 cubemap，供 vs 采样 u_probeCube（原版该槽位是 texturecube）
+    private var probeCube: MTLTexture?
 
     private func famDefaultRough(_ shader: String) -> Float {
         FAMILIES.first { $0.shader == shader }?.defaultRough ?? 1
@@ -196,6 +200,7 @@ final class TerrainPass {
             return t
         }
         let white = solid(255), cube = solidCube(255)
+        probeCube = cube
         // 云体积：Data/Tex3D/CloudFluffy.vol = 64B 头（VOLU + 文件名）+ 64³ 单通道 8bit
         var cloudVol: MTLTexture?
         if let vd = try? Data(contentsOf: root.appendingPathComponent("Data/Tex3D/CloudFluffy.vol")),
@@ -358,6 +363,10 @@ final class TerrainPass {
             guard let pipe = pipes[shader], let objBuf = objBufs[key] else { continue }
             enc.setRenderPipelineState(pipe)
             enc.setVertexBuffer(objBuf, offset: 0, index: 0)
+            if let fam = FAMILIES.first(where: { $0.shader == shader }), fam.vsCube {
+                if let probeCube { enc.setVertexTexture(probeCube, index: 3) }
+                enc.setVertexSamplerState(sampler, index: 3)
+            }
             if FAMILIES.first(where: { $0.shader == shader })?.hasFragRough ?? true {
                 var roughVal = roughs[key] ?? famDefaultRough(shader)
                 enc.setFragmentBytes(&roughVal, length: 4, index: 0)
