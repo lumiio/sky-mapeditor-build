@@ -189,7 +189,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -215,7 +214,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -241,7 +239,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -267,7 +264,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -293,7 +289,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -319,7 +314,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -345,7 +339,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -371,7 +364,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -397,7 +389,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -423,7 +414,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -449,7 +439,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -475,7 +464,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -501,7 +489,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -527,7 +514,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -553,7 +539,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -579,7 +564,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -605,7 +589,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -631,7 +614,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -657,7 +639,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -683,7 +664,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -709,7 +689,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -735,7 +714,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -761,7 +739,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -787,7 +764,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -813,7 +789,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -839,7 +814,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -865,7 +839,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -891,7 +864,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -917,7 +889,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -943,7 +914,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -969,7 +939,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -995,7 +964,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1021,7 +989,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1047,7 +1014,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1073,7 +1039,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1099,7 +1064,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1125,7 +1089,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -1151,7 +1114,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -1177,7 +1139,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -1203,7 +1164,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -1229,7 +1189,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1255,7 +1214,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1281,7 +1239,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1307,7 +1264,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1333,7 +1289,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1359,7 +1314,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1385,7 +1339,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1411,7 +1364,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1437,7 +1389,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1463,7 +1414,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1489,7 +1439,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1515,7 +1464,6 @@
     0.10459399968385696,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 0
@@ -1541,7 +1489,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
@@ -1567,7 +1514,6 @@
     0.14,
     1
    ],
-   "texture": "StoneBase",
    "texture2": "StoneGrunge2",
    "uvScale": 1,
    "normScale": 1
