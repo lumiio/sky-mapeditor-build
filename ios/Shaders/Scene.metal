@@ -16,12 +16,12 @@ struct U {
 struct VIn {
   float3 pos   [[attribute(0)]];
   float3 nrm   [[attribute(1)]];
-  uchar4 color [[attribute(2)]];
+  float4 color [[attribute(2)]];   // unorm8：Metal 归一化后直接是 0..1
   float4 uv0   [[attribute(3)]];
   float4 uv1   [[attribute(4)]];
-  uchar4 l0    [[attribute(5)]];
-  uchar4 l1    [[attribute(6)]];
-  uchar4 l2    [[attribute(7)]];
+  float4 l0    [[attribute(5)]];
+  float4 l1    [[attribute(6)]];
+  float4 l2    [[attribute(7)]];
 };
 
 struct VOut {
@@ -46,7 +46,7 @@ vertex VOut vs(VIn in [[stage_in]], constant U &u [[buffer(1)]],
   o.world = in.pos;
   o.pos = u.viewProj * float4(in.pos, 1.0);
   o.nrm = in.nrm;
-  o.color = float4(in.color) / 255.0;
+  o.color = in.color;
   o.eye = u.eyePos.xyz - in.pos;
   float3 E = normalize(o.eye);
   float3 I = -E;
@@ -54,9 +54,9 @@ vertex VOut vs(VIn in [[stage_in]], constant U &u [[buffer(1)]],
   o.probeSpec = probe.sample(lodsmp, I - 2.0 * dot(o.nrm, I) * o.nrm, level(5.0)).rgb;
   o.uv01 = in.uv0;
   o.uv23 = in.uv1;
-  o.l0 = float4(in.l0) / 255.0;
-  o.l1 = float4(in.l1) / 255.0;
-  o.l2 = float4(in.l2) / 255.0;
+  o.l0 = in.l0;
+  o.l1 = in.l1;
+  o.l2 = in.l2;
   return o;
 }
 

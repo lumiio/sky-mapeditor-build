@@ -151,12 +151,12 @@ final class MetalRenderer {
         // 原版顶点：pos | nrm | a_color | a_uv0(vec4) | a_uv1(vec4) | light0 | light1 | light2 = 72 B
         vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 0
         vd.attributes[1].format = .float3; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 0
-        vd.attributes[2].format = .uchar4; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 0
+        vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 0
         vd.attributes[3].format = .float4; vd.attributes[3].offset = 28; vd.attributes[3].bufferIndex = 0
         vd.attributes[4].format = .float4; vd.attributes[4].offset = 44; vd.attributes[4].bufferIndex = 0
-        vd.attributes[5].format = .uchar4; vd.attributes[5].offset = 60; vd.attributes[5].bufferIndex = 0
-        vd.attributes[6].format = .uchar4; vd.attributes[6].offset = 64; vd.attributes[6].bufferIndex = 0
-        vd.attributes[7].format = .uchar4; vd.attributes[7].offset = 68; vd.attributes[7].bufferIndex = 0
+        vd.attributes[5].format = .uchar4Normalized; vd.attributes[5].offset = 60; vd.attributes[5].bufferIndex = 0
+        vd.attributes[6].format = .uchar4Normalized; vd.attributes[6].offset = 64; vd.attributes[6].bufferIndex = 0
+        vd.attributes[7].format = .uchar4Normalized; vd.attributes[7].offset = 68; vd.attributes[7].bufferIndex = 0
         vd.layouts[0].stride = 72          // 顶点结构 72 B（pos/nrm/color/uv01/uv23/light0-2），stride 为 0 会让管线编译直接 abort
         vd.layouts[0].stepFunction = .perVertex
         vd.layouts[0].stepRate = 1
