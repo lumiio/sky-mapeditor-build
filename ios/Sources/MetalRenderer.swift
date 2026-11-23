@@ -763,8 +763,8 @@ final class MetalRenderer {
             skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
             skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
             // 地形片元用 mix(u_averageSkyColor, u_sunColor, a_light1.x) 作为环境光，之前这两个字段是 0 → 全场黑
-            if averageSky.x + averageSky.y + averageSky.z <= 0 {
-                averageSky = avgSkyC   // 均值 pass 拿不到时退回 EnvNode 原版 tintMidMid，避免地形全黑
+            if debugSkipSkyDome || averageSky.x + averageSky.y + averageSky.z <= 0 {
+                averageSky = SIMD3<Float>(avgSkyC.x, avgSkyC.y, avgSkyC.z)   // EnvNode 原版 tintMidMid
             }
             skyF.u_averageSkyColor = (averageSky.x, averageSky.y, averageSky.z)
             skyF.u_averageSkyOcclusion = 1
