@@ -250,10 +250,11 @@ fragment float4 waterFS(WVOut in [[stage_in]], constant WU &u [[buffer(1)]],
     float2 fragUv = float2(in.pos.x / u.viewport.x, in.pos.y / u.viewport.y);
     float3 E = normalize(in.eye);
     float3 N = normalize(in.nrm);
-    float3 nrmTap = (normalTex.sample(smp, in.uv01.xy).xyz
-                   + normalTex.sample(smp, in.uv01.zw).xyz
-                   + normalTex.sample(smp, in.uv23.xy).xyz) / 3.0 - 0.5;
-    N.xz = N.xz + nrmTap.xz;
+    // Ocean0.frag: (((t(uv01.xy).xy + t(uv01.zw).xy) + t(uv23.xy).xy) - 0.5)，不做平均
+    float2 nrmTap = (normalTex.sample(smp, in.uv01.xy).xy
+                   + normalTex.sample(smp, in.uv01.zw).xy
+                   + normalTex.sample(smp, in.uv23.xy).xy) - 0.5;
+    N.xz = N.xz + nrmTap;
     N = normalize(N);
     float3 I = -E;
     float3 reflDir = I - 2.0 * dot(N, I) * N;
