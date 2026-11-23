@@ -43,21 +43,26 @@ private struct FamilySpec {
     let uvScaleOffset: Int
     let metalnessOffset: Int   // -1 表示该结构没有 u_matMetalness
     let defaultRough: Float
+    let hasFragRough: Bool
 }
 
 private let FAMILIES: [FamilySpec] = [
     FamilySpec(shader: "GrassShMesh", vs: "GrassShMesh-22h.ios.vs",
                fs: "GrassShMesh-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true),
     FamilySpec(shader: "SandShMeshDecal", vs: "SandShMeshDecal-22h.ios.vs",
                fs: "SandShMeshDecal-22h.ios.fs", objSize: 160,
-               colorOffset: 144, uvScaleOffset: 156, metalnessOffset: -1, defaultRough: 0.5),
+               colorOffset: 144, uvScaleOffset: 156, metalnessOffset: -1, defaultRough: 0.5, hasFragRough: true),
     FamilySpec(shader: "RockFaceShMeshDecal", vs: "RockFaceShMeshDecal-22h.ios.vs",
                fs: "RockFaceShMeshDecal-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true),
     FamilySpec(shader: "RockFaceRainShMeshDecal", vs: "RockFaceRainShMeshDecal-22h.ios.vs",
                fs: "RockFaceRainShMeshDecal-22h.ios.fs", objSize: 112,
-               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0),
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true),
+    // CloudSh：fs 只有 PerFrame(2)，没有 u_matRoughness
+    FamilySpec(shader: "CloudSh", vs: "CloudShMesh-22h.ios.vs",
+               fs: "CloudShMesh-22h.ios.fs", objSize: 112,
+               colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: false),
 ]
 
 final class TerrainPass {
@@ -150,6 +155,25 @@ final class TerrainPass {
             return t
         }
         let white = solid(255), cube = solidCube(255)
+        // 云体积：Data/Tex3D/CloudFluffy.vol = 64B 头（VOLU + 文件名）+ 64³ 单通道 8bit
+        var cloudVol: MTLTexture?
+        if let vd = try? Data(contentsOf: root.appendingPathComponent("Data/Tex3D/CloudFluffy.vol")),
+           vd.count >= 64 + 64 * 64 * 64 {
+            let td = MTLTextureDescriptor()
+            td.textureType = .type3D
+            td.pixelFormat = .r8Unorm
+            td.width = 64; td.height = 64; td.depth = 64
+            td.mipmapLevelCount = 1
+            td.usage = .shaderRead
+            if let t = device.makeTexture(descriptor: td) {
+                vd.withUnsafeBytes { raw in
+                    t.replace(region: MTLRegionMake3D(0, 0, 0, 64, 64, 64), mipmapLevel: 0, slice: 0,
+                              withBytes: raw.baseAddress! + 64, bytesPerRow: 64, bytesPerImage: 4096)
+                }
+                cloudVol = t
+                Boot.log("云体积 64³ 已载入")
+            }
+        } else { Boot.log("云体积缺失") }
         let grassMask = loadTex("GrassMask"), grassN0 = loadTex("GrassNorTex0"), grassN1 = loadTex("GrassNorTex1")
         let sandMask = loadTex("SandMask"), sandNoise = loadTex("SandNoiseGray04")
         let cliffSh = loadTex("CliffSh"), cliffWetSh = loadTex("CliffWetSh")
@@ -201,6 +225,7 @@ final class TerrainPass {
                                     "u_topGeoTexture": 6, "u_sideGeoTexture": 7],
             "RockFaceRainShMeshDecal": ["u_probeCube": 3, "u_lightPRTex": 4, "u_lightCSTex": 5,
                                         "u_topGeoTexture": 6, "u_sideGeoTexture": 7],
+            "CloudSh": ["u_waterSim": 0, "u_cloudNoise3D": 3],
         ]
         var texCache: [String: MTLTexture?] = [:]
         func tex(_ name: String, _ isCube: Bool = false) -> MTLTexture? {
@@ -237,7 +262,9 @@ final class TerrainPass {
             var slots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil]
             let map = slotMap[shader] ?? [:]
             for (slotName, slotIdx) in map {
-                if slotName == "u_lightPRTex" || slotName == "u_lightCSTex" || slotName == "u_waterSim" {
+                if slotName == "u_cloudNoise3D" {
+                    slots[slotIdx] = cloudVol
+                } else if slotName == "u_lightPRTex" || slotName == "u_lightCSTex" || slotName == "u_waterSim" {
                     slots[slotIdx] = white
                 } else if slotName == "u_probeCube" {
                     slots[slotIdx] = cube
@@ -261,15 +288,17 @@ final class TerrainPass {
         var pp = perPass
         enc.setFragmentBytes(&pp, length: 16, index: 1)
         enc.setFragmentBytes(&perFrame, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
-        for i in 3..<8 { enc.setFragmentSamplerState(sampler, index: i) }
+        for i in 0..<8 { enc.setFragmentSamplerState(sampler, index: i) }
 
         for (key, ranges) in groups {
             let shader = String(key.split(separator: "/").first ?? "")
             guard let pipe = pipes[shader], let objBuf = objBufs[key] else { continue }
             enc.setRenderPipelineState(pipe)
             enc.setVertexBuffer(objBuf, offset: 0, index: 0)
-            var roughVal = roughs[key] ?? famDefaultRough(shader)
-            enc.setFragmentBytes(&roughVal, length: 4, index: 0)
+            if FAMILIES.first(where: { $0.shader == shader })?.hasFragRough ?? true {
+                var roughVal = roughs[key] ?? famDefaultRough(shader)
+                enc.setFragmentBytes(&roughVal, length: 4, index: 0)
+            }
             if let set = texSets[key] {
                 for (i, t) in set.enumerated() where t != nil { enc.setFragmentTexture(t, index: i) }
             }
