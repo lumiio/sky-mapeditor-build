@@ -59,8 +59,12 @@ final class TerrainPass {
         let ic = data.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt32.self) }
         let vbytes = Int(vc) * 36, ibytes = Int(ic) * 4
         guard data.count >= 8 + vbytes + ibytes else { return nil }
-        vbuf = device.makeBuffer(bytes: data.subdata(in: 8..<(8 + vbytes)), length: vbytes, options: .storageModeShared)
-        ibuf = device.makeBuffer(bytes: data.subdata(in: (8 + vbytes)..<(8 + vbytes + ibytes)), length: ibytes, options: .storageModeShared)
+        vbuf = data.subdata(in: 8..<(8 + vbytes)).withUnsafeBytes {
+            device.makeBuffer(bytes: $0.baseAddress!, length: vbytes, options: .storageModeShared)
+        }
+        ibuf = data.subdata(in: (8 + vbytes)..<(8 + vbytes + ibytes)).withUnsafeBytes {
+            device.makeBuffer(bytes: $0.baseAddress!, length: ibytes, options: .storageModeShared)
+        }
         if let md = try? Data(contentsOf: root.appendingPathComponent("CandleSpace.terrain.meta.json")),
            let m = try? JSONDecoder().decode(TerrainMeta.self, from: md) {
             meta = m
