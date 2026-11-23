@@ -1076,10 +1076,14 @@ final class MetalRenderer {
             if let tenc = cbX.makeRenderCommandEncoder(descriptor: tp) {
                 struct TUni { var bloomTint: SIMD4<Float>; var bloomParams: SIMD4<Float>
                               var viewportSize: SIMD4<Float>; var exposure: SIMD4<Float> }
+                // 自动曝光：server.cjs 里 tonemap 的亮度就是雾后 HDR 的几何平均 _e，
+                // 目标落在 0.18 中间灰（这正是你手动拖到 7.7× 时看到的亮度），除以 _e 得到倍率。
+                // 再做上下限，防止空场景/全黑帧把倍率拉到炸掉。
+                let autoScale = min(40.0, max(0.5, 0.18 / max(averageLum, 1e-3)))
                 var tu = TUni(bloomTint: envColor("bloomTint", SIMD3<Float>(1, 1, 1)),
                               bloomParams: SIMD4<Float>(envNum("bloomIntensity", 0), 0, 0, 0),
                               viewportSize: SIMD4<Float>(Float(w), Float(h), 1, 0),
-                              exposure: SIMD4<Float>(envNum("exposure", 1) * exposureGain, 0, 0, 0))
+                              exposure: SIMD4<Float>(envNum("exposure", 1) * exposureGain * autoScale, 0, 0, 0))
                 tenc.setRenderPipelineState(tonemapPipe)
                 tenc.setFragmentBytes(&tu, length: MemoryLayout<TUni>.stride, index: 1)
                 if frameIdx == 0 { Boot.log("调试：雾后处理旁路 debugSkipFogPost=\(debugSkipFogPost)（tonemap 直读 sceneTex2）") }
@@ -1115,7 +1119,10 @@ final class MetalRenderer {
         // 之前只跑一遍且用上一帧亮度，亮度会在两档之间来回跳，截图一会儿黑一会儿白。
         if let fogOut {
             let l = averageLuminance(of: fogOut)
-            if l > 0, l.isFinite { averageLum = l }
+            if l > 0, l.isFinite {
+                // 逐帧抖动会让自动曝光来回跳，做一点时间平滑（0.6 旧 + 0.4 新）
+                averageLum = frameIdx == 0 ? l : (averageLum * 0.6 + l * 0.4)
+            }
             if frameIdx <= 6 { Boot.log("平均亮度 f\(frameIdx)=\(l)（第二遍雾用这个）") }
         }
         if let cb2 = queue.makeCommandBuffer() {

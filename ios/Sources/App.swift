@@ -23,6 +23,18 @@ final class MetalView: MTKView {
     weak var renderer: MetalRenderer?
     private var lastPoint = CGPoint.zero
 
+    /// MTKView 按屏幕 scale 自己算 drawable，3× 屏会到 1320×2868，一帧十几张全屏贴图 ≈300MB。
+    /// 这里强制封在 2×（机身内存和带宽都省一半），不然切关卡时新旧叠加会被系统杀掉。
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width > 1, bounds.height > 1 else { return }
+        let scale = min(UIScreen.main.scale, 2.0)
+        let target = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        if abs(drawableSize.width - target.width) > 1 || abs(drawableSize.height - target.height) > 1 {
+            drawableSize = target
+        }
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         lastPoint = touches.first?.location(in: self) ?? .zero
     }
