@@ -562,12 +562,14 @@ struct PerFrameUniforms {
   char u_debugToggles[16];
 };
 
-struct DomeOut { float4 pos [[position]]; float3 world; };
+struct DomeOut { float4 pos [[position]]; };
 
-vertex DomeOut domeVS(VIn in [[stage_in]], constant U &u [[buffer(1)]]) {
+// 原版 SkyDomeFade 的片元只用 [[position]]（IR 实参只有 3 个 buffer + 一个 float4 位置），
+// 也就是说天空是全屏通道，几何体对结果没有影响：这里画覆盖全屏的大三角形即可。
+vertex DomeOut domeVS(uint vid [[vertex_id]]) {
+  float2 p[3] = { float2(-1.0, -1.0), float2(3.0, -1.0), float2(-1.0, 3.0) };
   DomeOut o;
-  o.world = in.pos;
-  o.pos = u.viewProj * float4(in.pos, 1.0);
+  o.pos = float4(p[vid], 1.0, 1.0);
   return o;
 }
 

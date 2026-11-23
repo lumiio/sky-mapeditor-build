@@ -371,15 +371,9 @@ final class MetalRenderer {
         do {
             meshPipe = try dev.makeRenderPipelineState(descriptor: rpd)
             Boot.log("mesh 管线 ok")
-        let skp = MTLRenderPipelineDescriptor()
-        skp.vertexFunction = library.makeFunction(name: "skyVS")
-        skp.fragmentFunction = library.makeFunction(name: "skyFS")
-        skp.colorAttachments[0].pixelFormat = .rgba16Float
-        skyPipe = try? dev.makeRenderPipelineState(descriptor: skp)
         let dpd = MTLRenderPipelineDescriptor()
         dpd.vertexFunction = library.makeFunction(name: "domeVS")
         dpd.fragmentFunction = library.makeFunction(name: "domeFadeFS")
-        dpd.vertexDescriptor = vd
         dpd.colorAttachments[0].pixelFormat = .rgba16Float
         domePipe = try? dev.makeRenderPipelineState(descriptor: dpd)
             waterPipe = try dev.makeRenderPipelineState(descriptor: wrpd)
@@ -772,14 +766,12 @@ final class MetalRenderer {
 
                 var skyP = PerPassUniforms()
                 skyP.u_viewportSize = (Float(w), Float(h), 1 / Float(w), 1 / Float(h))
-            for r in man.ranges where r.name.lowercased() == "plane" {
-                enc.setRenderPipelineState(domePipe)
-                enc.setFragmentBytes(&sky, length: MemoryLayout<PerObjectUniforms>.stride, index: 2)
-                enc.setFragmentBytes(&skyF, length: MemoryLayout<PerFrameUniforms>.stride, index: 3)
-                enc.setFragmentBytes(&skyP, length: MemoryLayout<PerPassUniforms>.stride, index: 4)
-                enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
-                                          indexBuffer: ibuf, indexBufferOffset: r.start * 4)
-            }
+            enc.setRenderPipelineState(domePipe)
+            enc.setFragmentBytes(&sky, length: MemoryLayout<PerObjectUniforms>.stride, index: 2)
+            enc.setFragmentBytes(&skyF, length: MemoryLayout<PerFrameUniforms>.stride, index: 3)
+            enc.setFragmentBytes(&skyP, length: MemoryLayout<PerPassUniforms>.stride, index: 4)
+            // 全屏大三角形：原版穹顶片元只用 [[position]]，不需要任何几何体
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             enc.setRenderPipelineState(meshPipe)
         }
         for r in man.ranges where r.name.lowercased() != "plane" {
