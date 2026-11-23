@@ -61,6 +61,11 @@ private let FAMILIES: [FamilySpec] = [
     FamilySpec(shader: "RockFaceRainShMeshDecal", vs: "RockFaceRainShMeshDecal-22h.ios.vs",
                fs: "RockFaceRainShMeshDecal-22h.ios.fs", objSize: 112,
                colorOffset: 80, uvScaleOffset: 92, metalnessOffset: 96, defaultRough: 1.0, hasFragRough: true, vsCube: true),
+    // SandRainShMeshDecal：湿沙（材质 33）。PerObject 与 Sand 同布局（.ref：model@0 / reflected@64 /
+    // worldToLevel@80 / u_matColor@144 / u_matUvScale@156，共 160B）
+    FamilySpec(shader: "SandRainShMeshDecal", vs: "SandRainShMeshDecal-22h.ios.vs",
+               fs: "SandRainShMeshDecal-22h.ios.fs", objSize: 160,
+               colorOffset: 144, uvScaleOffset: 156, metalnessOffset: -1, defaultRough: 0.5, hasFragRough: true, vsCube: false),
     // CloudSh：fs 只有 PerFrame(2)，没有 u_matRoughness
     FamilySpec(shader: "CloudSh", vs: "CloudShMesh-22h.ios.vs",
                fs: "CloudShMesh-22h.ios.fs", objSize: 112,
@@ -91,6 +96,34 @@ final class TerrainPass {
     /// 1×1 白色 cubemap，供 vs 采样 u_probeCube（原版该槽位是 texturecube）
     private var probeCube: MTLTexture?
 
+    /// MaterialDef.shader（基名） → 实际 metallib 家族名。原版地形只有这几个家族：
+    /// RockFaceSh → RockFaceShMeshDecal / RockFaceRainSh → RockFaceRainShMeshDecal /
+    /// SandSh → SandShMeshDecal / SandRainSh → SandRainShMeshDecal / GrassSh → GrassShMesh / CloudSh → CloudShMesh
+    static func familyName(materialShader: String?, metaShader: String?) -> String {
+        switch materialShader {
+        case "RockFaceSh": return "RockFaceShMeshDecal"
+        case "RockFaceRainSh": return "RockFaceRainShMeshDecal"
+        case "SandSh": return "SandShMeshDecal"
+        case "SandRainSh": return "SandRainShMeshDecal"
+        case "GrassSh": return "GrassShMesh"
+        case "CloudSh": return "CloudShMesh"
+        default: break
+        }
+        // 材质表里没有的（或 shader 为空的）：退回 meta 里推的值，再不行按岩石处理
+        if let m = metaShader {
+            switch m {
+            case "SnowMesh", "SnowShMeshDecal": return "SandShMeshDecal"   // 35 实际就是 SandSh
+            case "RockFaceSh", "RockFaceShMeshDecal": return "RockFaceShMeshDecal"
+            case "SandSh", "SandShMeshDecal": return "SandShMeshDecal"
+            case "SandRainSh", "SandRainShMeshDecal": return "SandRainShMeshDecal"
+            case "GrassSh", "GrassShMesh": return "GrassShMesh"
+            case "CloudSh", "CloudShMesh": return "CloudShMesh"
+            default: break
+            }
+        }
+        return "RockFaceShMeshDecal"
+    }
+
     private func famDefaultRough(_ shader: String) -> Float {
         FAMILIES.first { $0.shader == shader }?.defaultRough ?? 1
     }
@@ -112,19 +145,22 @@ final class TerrainPass {
         ibuf = data.subdata(in: (8 + vbytes)..<(8 + vbytes + ibytes)).withUnsafeBytes {
             device.makeBuffer(bytes: $0.baseAddress!, length: ibytes, options: .storageModeShared)
         }
-        if let md = try? Data(contentsOf: root.appendingPathComponent(level + ".terrain.meta.json")),
-           let m = try? JSONDecoder().decode(TerrainMeta.self, from: md) {
-            meta = m
-            for r in m.ranges where r.shader != nil {
-                groups["\(r.shader!)/\(r.material)", default: []].append(r)
-            }
-            Boot.log("terrain meta: \(m.vertexCount) 顶点 / \(m.ranges.count) 区间 / \(groups.count) 组")
-        } else { Boot.log("terrain meta 解码失败"); return nil }
+        // 材质表必须先读：meta 里的 shader 字段是早期我们自己推的（35 Snow 就被标成了 SnowMesh），
+        // 权威来源是 Level 的 MaterialDef.shader（RockFaceSh / SandSh / SandRainSh / GrassSh / CloudSh）。
         if let md = try? Data(contentsOf: root.appendingPathComponent("CandleSpace.materials.json")),
            let list = try? JSONDecoder().decode([MaterialDef].self, from: md) {
             for m in list { mats[m.id] = m }
             Boot.log("原版材质表: \(list.count) 条")
         } else { Boot.log("材质表缺失") }
+        if let md = try? Data(contentsOf: root.appendingPathComponent(level + ".terrain.meta.json")),
+           let m = try? JSONDecoder().decode(TerrainMeta.self, from: md) {
+            meta = m
+            for r in m.ranges {
+                let fam = TerrainPass.familyName(materialShader: mats[r.material]?.shader, metaShader: r.shader)
+                groups["\(fam)/\(r.material)", default: []].append(r)
+            }
+            Boot.log("terrain meta: \(m.vertexCount) 顶点 / \(m.ranges.count) 区间 / \(groups.count) 组")
+        } else { Boot.log("terrain meta 解码失败"); return nil }
 
         let ds = MTLDepthStencilDescriptor()
         ds.depthCompareFunction = .lessEqual
@@ -202,10 +238,19 @@ final class TerrainPass {
         let loader = MTKTextureLoader(device: device)
         let imgRoot = root.appendingPathComponent("Data/Images/Bin")
         func loadTex(_ n: String) -> MTLTexture? {
-            guard let t = try? loader.newTexture(URL: imgRoot.appendingPathComponent("\(n).png"), options: [.SRGB: false]) else {
-                Boot.log("地形贴图缺失 \(n)"); return nil
+            // 游戏包里的图是 KTX（ASTC 4x4 / RGBA8），编辑器导出的是 PNG；两种都认
+            let png = imgRoot.appendingPathComponent("\(n).png")
+            if FileManager.default.fileExists(atPath: png.path),
+               let t = try? loader.newTexture(URL: png, options: [.SRGB: false]) {
+                return t
             }
-            return t
+            let ktx = imgRoot.appendingPathComponent("ASTC/\(n).ktx")
+            if FileManager.default.fileExists(atPath: ktx.path),
+               let t = try? loader.newTexture(URL: ktx, options: [.SRGB: false]) {
+                return t
+            }
+            Boot.log("地形贴图缺失 \(n)")
+            return nil
         }
         let white = solid(255), cube = solidCube(255)
         probeCube = cube
@@ -290,6 +335,10 @@ final class TerrainPass {
                             "u_grassNorm1Tex": 6, "u_grassNorm2Tex": 7],
             "SandShMeshDecal": ["u_waterSim": 3, "u_lightPRTex": 4, "u_lightCSTex": 5,
                                 "u_grassMaskTexture": 6, "u_normalTex": 7],
+            // SandRainShMeshDecal 的 .ref 直接给了 location：3 waterSim / 4 puddleSimNorm /
+            // 5 lightPR / 6 lightCS / 7 grassMask / 8 normal（比 Sand 多一格 puddleSimNorm）
+            "SandRainShMeshDecal": ["u_waterSim": 3, "u_puddleSimNorm": 4, "u_lightPRTex": 5,
+                                    "u_lightCSTex": 6, "u_grassMaskTexture": 7, "u_normalTex": 8],
             "RockFaceShMeshDecal": ["u_probeCube": 3, "u_lightPRTex": 4, "u_lightCSTex": 5,
                                     "u_topGeoTexture": 6, "u_sideGeoTexture": 7],
             "RockFaceRainShMeshDecal": ["u_probeCube": 3, "u_lightPRTex": 4, "u_lightCSTex": 5,
@@ -331,7 +380,7 @@ final class TerrainPass {
             roughs[key] = def?.roughness ?? fam.defaultRough
 
             // 贴图：默认 PR/CS/waterSim 用 1×1 白，probeCube 用 1×1 cube；其余按材质表的 texture 名取包内原图
-            var slots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil]
+            var slots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil, nil]
             let map = slotMap[shader] ?? [:]
             for (slotName, slotIdx) in map {
                 if slotName == "u_cloudNoise3D" {
