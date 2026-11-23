@@ -163,13 +163,17 @@ final class TerrainPass {
                 let i = (y * 128 + x) * 4
                 arr[i] = Float16(v.x); arr[i + 1] = Float16(v.y); arr[i + 2] = Float16(v.z); arr[i + 3] = Float16(v.w)
             }
+            // 引擎写入值（0x1009e5754 段）：柔和度 soft 先 clamp 到 [0.07, 0.996]，再平方
+            // 表头 (簇号, 512-簇号, 范围内条数, 该簇总条数)；PR.w = 半径²·soft²；CS = 颜色·强度，w = soft²
+            let soft: Float = 0.996
+            let soft2 = soft * soft
             for c in 0..<h {
-                let hdr = SIMD4<Float>(Float(c), Float(512 - c), Float(n), 0)
+                let hdr = SIMD4<Float>(Float(c), Float(512 - c), Float(n), Float(n))
                 put(&prData, 0, c, hdr); put(&csData, 0, c, hdr)
                 for i in 0..<n {
                     let l = lights[i]
-                    put(&prData, i + 1, c, SIMD4<Float>(l.pos.x, l.pos.y, l.pos.z, l.radius * l.radius)) // PR.w=radius² ⇒ ratio=clamp(radius²/d²)
-                    put(&csData, i + 1, c, SIMD4<Float>(l.color.x, l.color.y, l.color.z, 0))            // CS.w 必须 0
+                    put(&prData, i + 1, c, SIMD4<Float>(l.pos.x, l.pos.y, l.pos.z, l.radius * l.radius * soft2))
+                    put(&csData, i + 1, c, SIMD4<Float>(l.color.x, l.color.y, l.color.z, soft2))
                 }
             }
             prData.withUnsafeBytes { pr.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0,
