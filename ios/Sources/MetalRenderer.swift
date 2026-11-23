@@ -5,55 +5,158 @@ import UIKit
 import simd
 
 
-/// SkyDomeFade 的 per-object 块（25 字段，字段顺序与 MSL 里的 SkyU 一一对应）
-struct SkyDU {
-    var skyColor: simd_float4
-    var horizonColor: simd_float4
-    var horizonFalloff: Float
-    var skyBrightness: Float
-    var useEnvSun: Float
-    var pad0: Float
-    var sunAngles: simd_float4
-    var sunSize: Float
-    var sunInt: Float
-    var pad1: Float
-    var pad2: Float
-    var sunTint: simd_float4
-    var sunGlow: Float
-    var pad3: Float
-    var pad4: Float
-    var pad5: Float
-    var highCloudSpeed: simd_float4
-    var highCloudHeight: Float
-    var highCloudSize: Float
-    var highCloudDensity: Float
-    var highCloudOpacity: Float
-    var lowCloudSpeed: simd_float4
-    var lowCloudHeight: Float
-    var lowCloudSize: Float
-    var lowCloudDensity: Float
-    var lowCloudOpacity: Float
-    var cloudColor: simd_float4
-    var cloudAbsorption: Float
-    var cloudPatchiness: Float
-    var skyFadeOut: Float
-    var pad6: Float
-}
+struct PerObjectUniforms {
+  var u_skyColor: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_horizonColor: (Float, Float, Float) = (0, 0, 0)
+  var u_horizonFalloff: Float = 0
+  var u_skyBrightness: Float = 0
+  var u_useEnvSun: Float = 0
+  var u_sunAngles: (Float, Float) = (0, 0)
+  var u_sunSize: Float = 0
+  var u_sunInt: Float = 0
+  var m8_pad: Float = 0
+  var _g57: Float = 0
+  var u_sunTint: (Float, Float, Float) = (0, 0, 0)
+  var u_sunGlow: Float = 0
+  var u_highCloudSpeed: (Float, Float) = (0, 0)
+  var u_highCloudHeight: Float = 0
+  var u_highCloudSize: Float = 0
+  var u_highCloudDensity: Float = 0
+  var u_highCloudOpacity: Float = 0
+  var u_lowCloudSpeed: (Float, Float) = (0, 0)
+  var u_lowCloudHeight: Float = 0
+  var u_lowCloudSize: Float = 0
+  var u_lowCloudDensity: Float = 0
+  var u_lowCloudOpacity: Float = 0
+  var u_cloudColor: (Float, Float, Float) = (0, 0, 0)
+  var u_cloudAbsorption: Float = 0
+  var u_cloudPatchiness: Float = 0
+  var u_skyFadeOut: Float = 0
+  var _t: (Float, Float) = (0, 0)
+};
 
-struct SkyFrameU {
-    var viewProjInv: simd_float4x4
-    var eyePos: simd_float4
-    var time: Float
-    var padA: Float
-    var padB: Float
-    var padC: Float
-    var sunDir: simd_float4
-    var sunSizeIntMoonPhase: simd_float4
-    var atmoSunColor: simd_float4
-}
+struct PerPassUniforms {
+  var u_viewportSize: (Float, Float, Float, Float) = (0, 0, 0, 0)
+};
 
-struct SkyPassU {
-    var viewportSize: simd_float4
+struct PerFrameUniforms {
+  var u_texSizeFull: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_texSizeHalf: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_postParams1: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_postParams2: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_lensDistortion: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_lensDistortion2: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_view: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  var u_proj: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  var u_viewProj: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  var u_viewProjInv: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  var u_viewProjOld: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  var u_viewProjCull: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  var u_camMat: (Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float, Float) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  var u_camNearPlane: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_lightShadowConsts: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_aaCornerUvs0: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_aaCornerUvs1: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_eyePos: (Float, Float, Float) = (0, 0, 0)
+  var u_unitHeightFrac: Float = 0
+  var u_dt: Float = 0
+  var u_time: Float = 0
+  var u_levelTime: Float = 0
+  var u_averagedt: Float = 0
+  var u_averageLum: Float = 0
+  var u_zNear: Float = 0
+  var u_zFar: Float = 0
+  var u_cameraCut: Float = 0
+  var u_oceanOffsetHeight: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_grassSpecularTint: (Float, Float, Float) = (0, 0, 0)
+  var u_underwater: Float = 0
+  var u_windVec: (Float, Float, Float) = (0, 0, 0)
+  var u_hudToSceneRatio: Float = 0
+  var u_jitterFullHalf: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_jitterFullHalfOld: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_projPlaneU: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_projPlaneUOld: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_projPlaneV: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_projPlaneVOld: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_projPlaneOrigin: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_projPlaneOriginOld: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_cheapFog: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_cheapFog2: (Float, Float) = (0, 0)
+  var u_sunAccess: (Float, Float) = (0, 0)
+  var u_probeExposure: Float = 0
+  var m44_pad: Float = 0
+  var _g869: (Float, Float) = (0, 0)
+  var u_sunDir: (Float, Float, Float) = (0, 0, 0)
+  var u_oceanBlendPow: Float = 0
+  var u_sunSizeIntMoonPhase: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_sunColor: (Float, Float, Float) = (0, 0, 0)
+  var u_atmosphereDensity: Float = 0
+  var u_fogDensityHeightDist: (Float, Float, Float) = (0, 0, 0)
+  var u_averageSkyOcclusion: Float = 0
+  var u_averageSkyColor: (Float, Float, Float) = (0, 0, 0)
+  var u_atmosphereSample: Float = 0
+  var u_averageSkyboxColor: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_atmosphereSunColor: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_averageProbeColor: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_earthPosRad: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_cinemaBrightness: Float = 0
+  var u_galleryChromaTest: Float = 0
+  var u_displayShoulderCutoff: Float = 0
+  var _g1036: Float = 0
+  var u_beaconPosEnable: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_beaconColor: (Float, Float, Float) = (0, 0, 0)
+  var u_disableMeshMotion: Float = 0
+  var u_portalConst: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_waterSimTerms: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_waterSimTerms2: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_waterSimTerms3: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_windScroll0: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_windScroll1: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_windScroll2: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_pointLight: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_probeShR0: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_probeShR1: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_probeShG0: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_probeShG1: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_probeShB0: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_probeShB1: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_probeShRGB2: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_probeCenter: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_cloudWindMoveNoise: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_cloudWindScrollSpace: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_cloudMat: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_cloudVoxelScales: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_localAvatarPos: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_localAvatarDir: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_localAvatarVel: (Float, Float, Float) = (0, 0, 0)
+  var u_cloudPackedBinDimInv: Float = 0
+  var u_randomOffset: (Float, Float, Float) = (0, 0, 0)
+  var u_cloudUndulationScale: Float = 0
+  var u_cloudBinMinWorld: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_cloudBinRangeWorld: (Float, Float, Float) = (0, 0, 0)
+  var u_cloudGeoScrollSpeed: Float = 0
+  var u_rainMovement: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_minLevelBounds: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_maxLevelBounds: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_levelBounds: (Float, Float, Float) = (0, 0, 0)
+  var u_reflectionPlaneHeight2: Float = 0
+  var u_debugTweaks: (Float, Float, Float, Float) = (0, 0, 0, 0)
+  var u_debugToggles: (Float, Float, Float, Float) = (0, 0, 0, 0)
+};
+
+
+func t3(_ v: SIMD3<Float>) -> (Float, Float, Float) { (v.x, v.y, v.z) }
+func t3(_ v: SIMD4<Float>) -> (Float, Float, Float) { (v.x, v.y, v.z) }
+/// float3（16 字节，尾部含一列填充）
+func t3p(_ v: SIMD3<Float>) -> (Float, Float, Float, Float) { (v.x, v.y, v.z, 0) }
+func t3p(_ v: SIMD4<Float>) -> (Float, Float, Float, Float) { (v.x, v.y, v.z, 0) }
+
+func mat4(_ m: simd_float4x4) -> (Float, Float, Float, Float, Float, Float, Float, Float,
+                                 Float, Float, Float, Float, Float, Float, Float, Float) {
+    (m.columns.0.x, m.columns.0.y, m.columns.0.z, m.columns.0.w,
+     m.columns.1.x, m.columns.1.y, m.columns.1.z, m.columns.1.w,
+     m.columns.2.x, m.columns.2.y, m.columns.2.z, m.columns.2.w,
+     m.columns.3.x, m.columns.3.y, m.columns.3.z, m.columns.3.w)
 }
 
 struct Uniforms {
@@ -631,50 +734,49 @@ final class MetalRenderer {
             enc.setFragmentTexture(posTex, index: 6)
             enc.setFragmentTexture(colTex, index: 7)
         }
-        // SkyDomeFade 穹顶：PerObject 块 = AmbienceSky 的色彩 + 引擎默认（数值见 docs/ir 的 IR）
-        if let domePipe {
-            var sky = SkyDU(skyColor: envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)),
-                           horizonColor: envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)),
-                           horizonFalloff: envNum("horizonFalloff", 0),
-                           skyBrightness: envNum("skyBrightness", 1),
-                           useEnvSun: 1,
-                           pad0: 0,
-                           sunAngles: SIMD4<Float>(envNum("sunAngleXZ", 180),
-                                                   envNum("sunAngleY", 40), 0, 0),
-                           sunSize: envNum("sunSize", 0),
-                           sunInt: envNum("sunInt", 1),
-                           pad1: 0, pad2: 0,
-                           sunTint: envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)),
-                           sunGlow: envNum("sunGlow", 0),
-                           pad3: 0, pad4: 0, pad5: 0,
-                           highCloudSpeed: SIMD4<Float>(0, 0, 0, 0),
-                           highCloudHeight: envNum("highCloudHeight", 0),
-                           highCloudSize: envNum("highCloudSize", 0),
-                           highCloudDensity: envNum("highCloudDensity", 0),
-                           highCloudOpacity: envNum("highCloudOpacity", 0),
-                           lowCloudSpeed: SIMD4<Float>(0, 0, 0, 0),
-                           lowCloudHeight: envNum("lowCloudHeight", 0),
-                           lowCloudSize: envNum("lowCloudSize", 0),
-                           lowCloudDensity: envNum("lowCloudDensity", 0),
-                           lowCloudOpacity: envNum("lowCloudOpacity", 0),
-                           cloudColor: envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)),
-                           cloudAbsorption: envNum("cloudAbsorption", 0),
-                           cloudPatchiness: envNum("cloudPatchiness", 0),
-                           skyFadeOut: envNum("skyFadeOut", 0),
-                           pad6: 0)
-            var skyF = SkyFrameU(viewProjInv: simd_inverse(vp),
-                                eyePos: SIMD4<Float>(eye, 1),
-                                time: Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000)),
-                                padA: 0, padB: 0, padC: 0,
-                                sunDir: SIMD4<Float>(sunDir, 0),
-                                sunSizeIntMoonPhase: SIMD4<Float>(envNum("sunSize", 0), envNum("sunInt", 1), 0, 0),
-                                atmoSunColor: envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
-            var skyP = SkyPassU(viewportSize: SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h)))
+            // SkyDomeFade 穹顶：PerObject 块 = AmbienceSky 的色彩 + 引擎默认（数值见 docs/ir 的 IR）
+            if let domePipe {
+                var sky = PerObjectUniforms()
+                sky.u_skyColor = t3p(envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)))
+                sky.u_horizonColor = t3(envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)))
+                sky.u_horizonFalloff = envNum("horizonFalloff", 0)
+                sky.u_skyBrightness = envNum("skyBrightness", 1)
+                sky.u_useEnvSun = 1
+                sky.u_sunAngles = (envNum("sunAngleXZ", 180), envNum("sunAngleY", 40))
+                sky.u_sunSize = envNum("sunSize", 0)
+                sky.u_sunInt = envNum("sunInt", 1)
+                sky.u_sunTint = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
+                sky.u_sunGlow = envNum("sunGlow", 0)
+                sky.u_highCloudSpeed = (0, 0)
+                sky.u_highCloudHeight = envNum("highCloudHeight", 0)
+                sky.u_highCloudSize = envNum("highCloudSize", 0)
+                sky.u_highCloudDensity = envNum("highCloudDensity", 0)
+                sky.u_highCloudOpacity = envNum("highCloudOpacity", 0)
+                sky.u_lowCloudSpeed = (0, 0)
+                sky.u_lowCloudHeight = envNum("lowCloudHeight", 0)
+                sky.u_lowCloudSize = envNum("lowCloudSize", 0)
+                sky.u_lowCloudDensity = envNum("lowCloudDensity", 0)
+                sky.u_lowCloudOpacity = envNum("lowCloudOpacity", 0)
+                sky.u_cloudColor = t3(envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)))
+                sky.u_cloudAbsorption = envNum("cloudAbsorption", 0)
+                sky.u_cloudPatchiness = envNum("cloudPatchiness", 0)
+                sky.u_skyFadeOut = envNum("skyFadeOut", 0)
+
+                var skyF = PerFrameUniforms()
+                skyF.u_viewProjInv = mat4(simd_inverse(vp))
+                skyF.u_eyePos = t3(eye)
+                skyF.u_time = Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000))
+                skyF.u_sunDir = t3(sunDir)
+                skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
+                skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
+
+                var skyP = PerPassUniforms()
+                skyP.u_viewportSize = (Float(w), Float(h), 1 / Float(w), 1 / Float(h))
             for r in man.ranges where r.name.lowercased() == "plane" {
                 enc.setRenderPipelineState(domePipe)
-                enc.setFragmentBytes(&sky, length: MemoryLayout<SkyDU>.stride, index: 2)
-                enc.setFragmentBytes(&skyF, length: MemoryLayout<SkyFrameU>.stride, index: 3)
-                enc.setFragmentBytes(&skyP, length: MemoryLayout<SkyPassU>.stride, index: 4)
+                enc.setFragmentBytes(&sky, length: MemoryLayout<PerObjectUniforms>.stride, index: 2)
+                enc.setFragmentBytes(&skyF, length: MemoryLayout<PerFrameUniforms>.stride, index: 3)
+                enc.setFragmentBytes(&skyP, length: MemoryLayout<PerPassUniforms>.stride, index: 4)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                           indexBuffer: ibuf, indexBufferOffset: r.start * 4)
             }
