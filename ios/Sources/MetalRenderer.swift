@@ -277,7 +277,7 @@ final class MetalRenderer {
     private let debugSkipWater = true
     /// 穹顶开关：DomePass 用原版 SkyDomeFade metallib + 原版 UnitSphere.mesh（半径 1.0）；
     /// 管线或网格任一缺失时 DomePass 自身返回 nil，这里再兜一层，绝不发非法 draw（非法 draw 会让整个 command buffer 作废）
-    private let debugSkipSkyDome = false
+    private let debugSkipSkyDome = true   // 诊断期：先只跑地形，确认 sceneTex 到底有没有被写
     /// 诊断开关：真机雾管线输出恒为「1.0」(=亮度 0)，会把整帧乘黑；先让 tonemap 直读场景色，
     /// 用亮度图确认场景本身有没有内容，再回来修雾。仅诊断期打开，日志会写明。
     private let debugSkipFogPost = true
@@ -734,6 +734,23 @@ final class MetalRenderer {
                          viewport: SIMD4<Float>(Float(w), Float(h), 0, 0),
                          exposure: SIMD4<Float>(envNum("exposure", 1), 0, 0, 0),
                          lightShadowConsts: SIMD4<Float>(0, 0, 1, 0))
+
+        if frameIdx == 0 {
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 4, height: 4, mipmapped: false)
+            td.usage = .renderTarget
+            td.storageMode = .shared
+            if let t = device.makeTexture(descriptor: td), let tcb = queue.makeCommandBuffer() {
+                let p = MTLRenderPassDescriptor()
+                p.colorAttachments[0].texture = t
+                p.colorAttachments[0].loadAction = .clear
+                p.colorAttachments[0].clearColor = MTLClearColor(red: 1, green: 0.25, blue: 0.5, alpha: 1)
+                p.colorAttachments[0].storeAction = .store
+                if let e = tcb.makeRenderCommandEncoder(descriptor: p) { e.endEncoding() }
+                tcb.commit()
+                tcb.waitUntilCompleted()
+                Boot.log("自检 清屏读回=\(probeHalf(t, 0.25, 0.25)) cb=\(tcb.status.rawValue) err=\(String(describing: tcb.error))")
+            }
+        }
 
         guard let cb = queue.makeCommandBuffer() else { return }
 
