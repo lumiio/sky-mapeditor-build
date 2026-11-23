@@ -6,7 +6,7 @@ import simd
 
 
 /// SkyDomeFade 的 per-object 块（25 字段，字段顺序与 MSL 里的 SkyU 一一对应）
-struct SkyU {
+struct SkyDU {
     var skyColor: simd_float4
     var horizonColor: simd_float4
     var horizonFalloff: Float
@@ -40,7 +40,7 @@ struct SkyU {
     var pad6: Float
 }
 
-struct SkyFrame {
+struct SkyFrameU {
     var viewProjInv: simd_float4x4
     var eyePos: simd_float4
     var time: Float
@@ -52,7 +52,7 @@ struct SkyFrame {
     var atmoSunColor: simd_float4
 }
 
-struct SkyPass {
+struct SkyPassU {
     var viewportSize: simd_float4
 }
 
@@ -633,7 +633,7 @@ final class MetalRenderer {
         }
         // SkyDomeFade 穹顶：PerObject 块 = AmbienceSky 的色彩 + 引擎默认（数值见 docs/ir 的 IR）
         if let domePipe {
-            var sky = SkyU(skyColor: envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)),
+            var sky = SkyDU(skyColor: envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)),
                            horizonColor: envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)),
                            horizonFalloff: envNum("horizonFalloff", 0),
                            skyBrightness: envNum("skyBrightness", 1),
@@ -662,19 +662,19 @@ final class MetalRenderer {
                            cloudPatchiness: envNum("cloudPatchiness", 0),
                            skyFadeOut: envNum("skyFadeOut", 0),
                            pad6: 0)
-            var skyF = SkyFrame(viewProjInv: simd_inverse(vp),
+            var skyF = SkyFrameU(viewProjInv: simd_inverse(vp),
                                 eyePos: SIMD4<Float>(eye, 1),
                                 time: Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000)),
                                 padA: 0, padB: 0, padC: 0,
                                 sunDir: SIMD4<Float>(sunDir, 0),
                                 sunSizeIntMoonPhase: SIMD4<Float>(envNum("sunSize", 0), envNum("sunInt", 1), 0, 0),
                                 atmoSunColor: envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
-            var skyP = SkyPass(viewportSize: SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h)))
+            var skyP = SkyPassU(viewportSize: SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h)))
             for r in man.ranges where r.name.lowercased() == "plane" {
                 enc.setRenderPipelineState(domePipe)
-                enc.setFragmentBytes(&sky, length: MemoryLayout<SkyU>.stride, index: 2)
-                enc.setFragmentBytes(&skyF, length: MemoryLayout<SkyFrame>.stride, index: 3)
-                enc.setFragmentBytes(&skyP, length: MemoryLayout<SkyPass>.stride, index: 4)
+                enc.setFragmentBytes(&sky, length: MemoryLayout<SkyDU>.stride, index: 2)
+                enc.setFragmentBytes(&skyF, length: MemoryLayout<SkyFrameU>.stride, index: 3)
+                enc.setFragmentBytes(&skyP, length: MemoryLayout<SkyPassU>.stride, index: 4)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                           indexBuffer: ibuf, indexBufferOffset: r.start * 4)
             }
