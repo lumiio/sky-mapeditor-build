@@ -1039,7 +1039,9 @@ final class MetalRenderer {
                 }
                 fenc.endEncoding()
             }
-            runFogUpsample(cb, averageLum)
+            // 原版第一遍雾固定用 u_averageLum = 1（server.cjs: u_averageLum:1），
+            // 这样 1/x-1 反解出来的就是场景本身，几何平均不会和上一帧互相拉扯。
+            runFogUpsample(cb, 1.0)
         }
 
         /// 后处理：Tonemap → Fxaa → drawable（在读画面第二遍雾之后跑）
