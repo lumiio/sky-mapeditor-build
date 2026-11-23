@@ -329,7 +329,8 @@ final class MetalRenderer {
 
         let rpd = MTLRenderPipelineDescriptor()
         rpd.vertexFunction = vfn; rpd.fragmentFunction = ffn; rpd.vertexDescriptor = vd
-        rpd.colorAttachments[0].pixelFormat = .bgra8Unorm
+        // sceneTex 是 rgba16Float（HDR 场景缓冲）；管线声明 bgra8Unorm 会与附件格式不符，整条 pass 的 draw 都被校验拦掉
+        rpd.colorAttachments[0].pixelFormat = .rgba16Float
         rpd.depthAttachmentPixelFormat = .depth32Float
         let dsDesc = MTLDepthStencilDescriptor()
         dsDesc.depthCompareFunction = .less
@@ -351,7 +352,7 @@ final class MetalRenderer {
 
         let wrpd = MTLRenderPipelineDescriptor()
         wrpd.vertexFunction = wvs; wrpd.fragmentFunction = wfs; wrpd.vertexDescriptor = wvd
-        wrpd.colorAttachments[0].pixelFormat = .bgra8Unorm
+        wrpd.colorAttachments[0].pixelFormat = .rgba16Float   // 水面写进 sceneTex2（rgba16Float），格式必须一致
 
         let wdsDesc = MTLDepthStencilDescriptor()
         wdsDesc.depthCompareFunction = .lessEqual
