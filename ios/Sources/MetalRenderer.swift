@@ -268,6 +268,9 @@ final class MetalRenderer {
     var el: Float = 0.28
     var zoom: Float = 1.0
     /// 观察用曝光增益（编辑器 UI 滑杆），乘在 tonemap 的 exposure 上；默认 1
+    /// 双指平移：在关卡平面上的取景中心偏移
+    var targetShift = SIMD2<Float>(0, 0)
+
     var exposureGain: Float = 1.0 {
         didSet {
             Boot.log("曝光增益 gain=\(exposureGain) 基准=\(exposureBase) 有效=\(exposureBase * exposureGain) 平均亮度=\(averageLum)")
@@ -285,10 +288,10 @@ final class MetalRenderer {
     private let debugSkipWater = true
     /// 穹顶开关：DomePass 用原版 SkyDomeFade metallib + 原版 UnitSphere.mesh（半径 1.0）；
     /// 管线或网格任一缺失时 DomePass 自身返回 nil，这里再兜一层，绝不发非法 draw（非法 draw 会让整个 command buffer 作废）
-    private let debugSkipSkyDome = false
+    var debugSkipSkyDome = false
     /// 诊断开关：真机雾管线输出恒为「1.0」(=亮度 0)，会把整帧乘黑；先让 tonemap 直读场景色，
     /// 用亮度图确认场景本身有没有内容，再回来修雾。仅诊断期打开，日志会写明。
-    private let debugSkipFogPost = false
+    var debugSkipFogPost = false
     private var frameIdx = 0
 
     private var sceneTex: MTLTexture?
@@ -684,15 +687,12 @@ final class MetalRenderer {
     func draw(in view: MTKView) {
         var miss: [String] = []
         if man == nil { miss.append("man") }
-        if vbuf == nil { miss.append("vbuf") }
-        if ibuf == nil { miss.append("ibuf") }
-        if waterVB == nil { miss.append("waterVB") }
-        if waterIB == nil { miss.append("waterIB") }
+        // GEO0 纯地形关卡没有 .verts/.idx（原版关卡只有 .terrain.bin），不算缺资源
+        if !(man?.ranges.isEmpty ?? true), vbuf == nil { miss.append("vbuf") }
+        if !(man?.ranges.isEmpty ?? true), ibuf == nil { miss.append("ibuf") }
         if view.currentDrawable == nil { miss.append("drawable") }
         if meshPipe == nil { miss.append("meshPipe") }
-        if waterPipe == nil { miss.append("waterPipe") }
         if depthState == nil { miss.append("depthState") }
-        if waterDepthState == nil { miss.append("waterDepthState") }
         if sampler == nil { miss.append("sampler") }
         if clampSampler == nil { miss.append("clampSampler") }
         if fallbackTex == nil { miss.append("fallbackTex") }
@@ -700,8 +700,8 @@ final class MetalRenderer {
             if frameIdx == 0 { Boot.log("draw 缺资源: \(miss.joined(separator: ","))  drawableSize=\(Int(view.drawableSize.width))×\(Int(view.drawableSize.height)) paused=\(view.isPaused)") }
             return
         }
-        guard let man, let vbuf, let ibuf, let waterVB, let waterIB, let drawable = view.currentDrawable,
-              let meshPipe, let waterPipe, let depthState, let waterDepthState,
+        guard let man, let drawable = view.currentDrawable,
+              let meshPipe, let depthState,
               let sampler, let clampSampler, let fallbackTex else { return }
         lastError = nil
         let w = view.drawableSize.width > 0 ? Int(view.drawableSize.width) : 1
@@ -710,14 +710,15 @@ final class MetalRenderer {
         guard let sceneTex, let sceneTex2, let depthTex else { return }
 
         let dist = radius * 1.15 * zoom
-        let eye = center + SIMD3<Float>(cos(el)*cos(az), sin(el), cos(el)*sin(az)) * dist
-        let fwd = simd_normalize(center - eye)
+        let centerShifted = center + SIMD3<Float>(targetShift.x, 0, targetShift.y)
+        let eye = centerShifted + SIMD3<Float>(cos(el)*cos(az), sin(el), cos(el)*sin(az)) * dist
+        let fwd = simd_normalize(centerShifted - eye)
         let up = SIMD3<Float>(0, 1, 0)
         let right = simd_normalize(simd_cross(fwd, up))
         let camUp = simd_cross(right, fwd)
         let nearD = max(dist * 0.01, 0.05), farD = dist * 20
         let proj = perspective(50.0 * Float.pi / 180, Float(w) / Float(h), nearD, farD)
-        let viewM = lookAt(eye, center, camUp)
+        let viewM = lookAt(eye, centerShifted, camUp)
         let vp = proj * viewM
         updateClusters(vp, w, h)
 
@@ -782,7 +783,7 @@ final class MetalRenderer {
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
         enc.setRenderPipelineState(meshPipe)
         enc.setDepthStencilState(depthState)
-        enc.setVertexBuffer(vbuf, offset: 0, index: 0)
+        if let vbuf { enc.setVertexBuffer(vbuf, offset: 0, index: 0) }
         enc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
         enc.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 1)
         enc.setFragmentSamplerState(sampler, index: 0)
@@ -898,7 +899,8 @@ final class MetalRenderer {
             pf.u_probeCenter = (eye.x, eye.y, eye.z, 1)
             terrain.encode(enc, perFrame: &pf, perPass: SIMD4<Float>(skyP.u_viewportSize.0, skyP.u_viewportSize.1, 1 / Float(w), 1 / Float(h)))
             enc.setRenderPipelineState(meshPipe)
-        } else {
+        } else if let vbuf, let ibuf {
+        enc.setVertexBuffer(vbuf, offset: 0, index: 0)
         for r in man.ranges where r.name.lowercased() != "plane" {
             let c = SIMD4<Float>(r.color.count >= 3 ? r.color[0] : 1, r.color.count >= 3 ? r.color[1] : 1, r.color.count >= 3 ? r.color[2] : 1, 1)
             if let n = r.texture, let t = tex(n) { enc.setFragmentTexture(t, index: 0) } else { enc.setFragmentTexture(fallbackTex, index: 0) }
@@ -949,7 +951,8 @@ final class MetalRenderer {
         wrp.depthAttachment.loadAction = .load
         wrp.depthAttachment.storeAction = .dontCare
         if debugSkipWater && frameIdx == 0 { Boot.log("调试：跳过水面 pass（水面仍为占位 MSL，未接原版 Ocean*）") }
-        if !debugSkipWater, let wenc = cb.makeRenderCommandEncoder(descriptor: wrp) {
+        if !debugSkipWater, let waterVB, let waterIB, let waterPipe, let waterDepthState,
+           let wenc = cb.makeRenderCommandEncoder(descriptor: wrp) {
             wenc.setRenderPipelineState(waterPipe)
             wenc.setDepthStencilState(waterDepthState)
             wenc.setVertexBuffer(waterVB, offset: 0, index: 0)

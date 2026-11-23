@@ -30,8 +30,8 @@ final class MetalView: MTKView {
         guard let p = touches.first?.location(in: self), let r = renderer else { return }
         let dx = Float(p.x - lastPoint.x), dy = Float(p.y - lastPoint.y)
         lastPoint = p
-        r.az -= dx * 0.006
-        r.el = min(1.3, max(-0.2, r.el + dy * 0.006))
+        r.az += dx * 0.006
+        r.el = min(1.3, max(-0.2, r.el - dy * 0.006))
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {}
 }
@@ -43,8 +43,12 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     private var info: UILabel!
     private var expoSlider: UISlider!
     private var expoLabel: UILabel!
-    private let levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village", "Dawn_TrialsEarth", "Night_JarCave"]
-    private let levels = ["烛窟", "蝶原", "草原村", "土试炼", "罐洞"]
+    private var btnReset: UIButton!
+    private var btnFog: UIButton!
+    private var btnDome: UIButton!
+    private let levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village",
+                            "Dawn_TrialsEarth", "Dawn_TrialsAir", "Night_JarCave", "AR_WheatField"]
+    private let levels = ["烛窟", "蝶原", "草原村", "土试炼", "风试炼", "罐洞", "麦田"]
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -64,7 +68,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         view.addSubview(view3d)
 
         segmented = UISegmentedControl(items: levels)
-        segmented.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 12, weight: .medium)], for: .normal)
+        segmented.setTitleTextAttributes([.foregroundColor: UIColor.white, .font: UIFont.systemFont(ofSize: 11, weight: .medium)], for: .normal)
         segmented.selectedSegmentIndex = 0
         segmented.apportionsSegmentWidthsByContent = true
         segmented.translatesAutoresizingMaskIntoConstraints = false
@@ -89,6 +93,26 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         expoLabel.text = "曝光 ×1.00"
         view.addSubview(expoLabel)
 
+        func chip(_ title: String, _ act: Selector) -> UIButton {
+            let b = UIButton(type: .system)
+            b.setTitle(title, for: .normal)
+            b.setTitleColor(.white, for: .normal)
+            b.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
+            b.backgroundColor = UIColor(white: 0.16, alpha: 0.9)
+            b.layer.cornerRadius = 8
+            b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+            b.addTarget(self, action: act, for: .touchUpInside)
+            return b
+        }
+        btnReset = chip("重置视角", #selector(onReset))
+        btnFog = chip("雾：开", #selector(onToggleFog))
+        btnDome = chip("穹顶：开", #selector(onToggleDome))
+        let chipRow = UIStackView(arrangedSubviews: [btnReset, btnFog, btnDome])
+        chipRow.axis = .horizontal
+        chipRow.spacing = 8
+        chipRow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(chipRow)
+
         info = UILabel()
         info.translatesAutoresizingMaskIntoConstraints = false
         info.textColor = .white
@@ -110,10 +134,18 @@ final class ViewerController: UIViewController, MTKViewDelegate {
             expoSlider.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -22),
             expoLabel.leadingAnchor.constraint(equalTo: expoSlider.leadingAnchor),
             expoLabel.bottomAnchor.constraint(equalTo: expoSlider.topAnchor, constant: -2),
+            chipRow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            chipRow.bottomAnchor.constraint(equalTo: expoLabel.topAnchor, constant: -10),
         ])
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(onPinch(_:)))
         view3d.addGestureRecognizer(pinch)
+        let dbl = UITapGestureRecognizer(target: self, action: #selector(onReset))
+        dbl.numberOfTapsRequired = 2
+        view3d.addGestureRecognizer(dbl)
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(onPan(_:)))
+        pan.minimumNumberOfTouches = 2
+        view3d.addGestureRecognizer(pan)
 
         // 先读上一轮的启动日志：没有「first frame」就说明上次启动阶段崩了，把断点留住
         let prevLog = Boot.tail(30)
@@ -146,6 +178,34 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
     @objc private func changeLevel() {
         load(level: levelIDs[max(0, segmented.selectedSegmentIndex)])
+    }
+
+    @objc private func onReset() {
+        guard let r = renderer else { return }
+        r.az = 2.10; r.el = 0.28; r.zoom = 1.0; r.targetShift = SIMD2<Float>(0, 0)
+        r.exposureGain = 1.0
+        expoSlider.value = 0
+        expoLabel.text = "曝光 ×1.00"
+    }
+
+    @objc private func onToggleFog() {
+        guard let r = renderer else { return }
+        r.debugSkipFogPost.toggle()
+        btnFog.setTitle(r.debugSkipFogPost ? "雾：关" : "雾：开", for: .normal)
+    }
+
+    @objc private func onToggleDome() {
+        guard let r = renderer else { return }
+        r.debugSkipSkyDome.toggle()
+        btnDome.setTitle(r.debugSkipSkyDome ? "穹顶：关" : "穹顶：开", for: .normal)
+    }
+
+    @objc private func onPan(_ g: UIPanGestureRecognizer) {
+        guard let r = renderer else { return }
+        let t = g.translation(in: view3d)
+        r.targetShift.x -= Float(t.x) * 0.02
+        r.targetShift.z -= Float(t.y) * 0.02
+        g.setTranslation(.zero, in: view3d)
     }
 
     @objc private func onExposure() {
