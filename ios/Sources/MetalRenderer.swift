@@ -278,6 +278,9 @@ final class MetalRenderer {
     /// 穹顶开关：DomePass 用原版 SkyDomeFade metallib + 原版 UnitSphere.mesh（半径 1.0）；
     /// 管线或网格任一缺失时 DomePass 自身返回 nil，这里再兜一层，绝不发非法 draw（非法 draw 会让整个 command buffer 作废）
     private let debugSkipSkyDome = false
+    /// 诊断开关：真机雾管线输出恒为「1.0」(=亮度 0)，会把整帧乘黑；先让 tonemap 直读场景色，
+    /// 用亮度图确认场景本身有没有内容，再回来修雾。仅诊断期打开，日志会写明。
+    private let debugSkipFogPost = true
     private var frameIdx = 0
 
     private var sceneTex: MTLTexture?
@@ -1006,7 +1009,8 @@ final class MetalRenderer {
                               exposure: SIMD4<Float>(envNum("exposure", 1), 0, 0, 0))
                 tenc.setRenderPipelineState(tonemapPipe)
                 tenc.setFragmentBytes(&tu, length: MemoryLayout<TUni>.stride, index: 1)
-                tenc.setFragmentTexture((fogPipe != nil && fogOut != nil) ? fogOut! : sceneTex2, index: 0)
+                if frameIdx == 0 { Boot.log("调试：雾后处理旁路 debugSkipFogPost=\(debugSkipFogPost)（tonemap 直读 sceneTex2）") }
+                tenc.setFragmentTexture((fogPipe != nil && fogOut != nil && !debugSkipFogPost) ? fogOut! : sceneTex2, index: 0)
                 tenc.setFragmentTexture(blackTex ?? fallbackTex, index: 1)
                 tenc.setFragmentSamplerState(clampSampler, index: 0)
                 tenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
