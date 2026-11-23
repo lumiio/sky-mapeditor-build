@@ -775,8 +775,13 @@ final class MetalRenderer {
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             enc.setRenderPipelineState(meshPipe)
         }
+        // 原版地形片元读取的 PerFrame 字段：u_camMat@480 / u_lightShadowConsts@560 / u_eyePos@608 / u_sunDir@880 / u_sunColor@912 / u_pointLight@1184
+        Boot.log("PerFrame 偏移 camMat=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_camMat) ?? -1) eyePos=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_eyePos) ?? -1) sunDir=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunDir) ?? -1) sunColor=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunColor) ?? -1) pointLight=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_pointLight) ?? -1) size=\(MemoryLayout<PerFrameUniforms>.stride)")
         if let terrain {
             var pf = skyF
+            pf.u_camMat = mat4(viewM)
+            pf.u_lightShadowConsts = (0, 0, 1, 0)
+            pf.u_pointLight = (plC.x * plK, plC.y * plK, plC.z * plK, 0)
             terrain.encode(enc, perFrame: &pf, perPass: SIMD4<Float>(skyP.u_viewportSize.0, skyP.u_viewportSize.1, 1 / Float(w), 1 / Float(h)))
             enc.setRenderPipelineState(meshPipe)
         } else {

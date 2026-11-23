@@ -46,7 +46,7 @@ final class TerrainPass {
     private var depth: MTLDepthStencilState?
     private var meta: TerrainMeta?
     private var grassRanges: [TerrainRangeMeta] = []
-    private var texSlots: [MTLTexture?] = [nil, nil, nil, nil, nil]
+    private var texSlots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil]
     private var sampler: MTLSamplerState?
     private var rough: Float = 0.85
 
@@ -121,8 +121,14 @@ final class TerrainPass {
             }
             return t
         }
-        // 槽位顺序来自 .ref：u_grassMaskTex / u_grassNorm1Tex / u_grassNorm2Tex / u_lightCSTex / u_lightPRTex
-        texSlots = [loadTex("GrassMask"), loadTex("GrassNorTex0"), loadTex("GrassNorTex1"), loadTex("White"), loadTex("White")]
+        // 槽位严格取 IR 的 air.location_index：3=u_lightPRTex 4=u_lightCSTex 5=u_grassMaskTex 6=u_grassNorm1Tex 7=u_grassNorm2Tex
+        var slots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil]
+        slots[3] = loadTex("White")          // u_lightPRTex（光簇图集，数据待解，暂用 1x1）
+        slots[4] = loadTex("White")          // u_lightCSTex
+        slots[5] = loadTex("GrassMask")
+        slots[6] = loadTex("GrassNorTex0")
+        slots[7] = loadTex("GrassNorTex1")
+        texSlots = slots
     }
 
     func encode(_ enc: MTLRenderCommandEncoder, perFrame: inout PerFrameUniforms, perPass: SIMD4<Float>) {
@@ -143,7 +149,7 @@ final class TerrainPass {
         enc.setFragmentBytes(&pp, length: 16, index: 1)
         enc.setFragmentBytes(&perFrame, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
         for (i, t) in texSlots.enumerated() where t != nil { enc.setFragmentTexture(t, index: i) }
-        enc.setFragmentSamplerState(sampler, index: 0)
+        for i in 3..<8 { enc.setFragmentSamplerState(sampler, index: i) }
         for r in grassRanges {
             enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                       indexBuffer: ibuf, indexBufferOffset: r.start * 4)
