@@ -43,7 +43,8 @@ final class MetalView: MTKView {
         let dx = Float(p.x - lastPoint.x), dy = Float(p.y - lastPoint.y)
         lastPoint = p
         r.az += dx * 0.006
-        r.el = min(1.3, max(-0.2, r.el - dy * 0.006))
+        let lo: Float = r.firstPerson ? -1.35 : -0.2
+        r.el = min(1.35, max(lo, r.el - dy * 0.006))
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {}
 }
@@ -52,18 +53,21 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     private var renderer: MetalRenderer?
     private var view3d: MetalView!
 
-    // 底部一张圆角卡片，分三区：关卡 / 显示 / 曝光
-    private var card: UIView!
+    // 极简 HUD：左上角关卡胶囊 + 右下角一个圆按钮；所有设置收在点开后的底部面板里。
+    private var pill: UIButton!
     private var titleLabel: UILabel!
     private var hud: UILabel!
-    private var levelBar: UIStackView!
+    private var gear: UIButton!
+    private var scrim: UIControl!
+    private var sheet: UIView!
     private var levelChips: [UIButton] = []
-    private var btnReset: UIButton!
-    private var btnFog: UIButton!
-    private var btnDome: UIButton!
-    private var btnCloud: UIButton!
+    private var swFog: UISwitch!
+    private var swCloud: UISwitch!
+    private var swDome: UISwitch!
+    private var swFP: UISwitch!
     private var expoSlider: UISlider!
     private var expoLabel: UILabel!
+    private var sheetShown = false
 
     private var loading = false
     private var cur = 0
@@ -126,107 +130,232 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     }
 
     private func setupCard() {
-        card = UIView()
-        card.translatesAutoresizingMaskIntoConstraints = false
-        card.backgroundColor = UIColor(white: 0.07, alpha: 0.93)
-        card.layer.cornerRadius = 18
-        card.layer.cornerCurve = .continuous
-        card.layer.borderWidth = 1
-        card.layer.borderColor = UIColor(white: 1.0, alpha: 0.07).cgColor
-        view.addSubview(card)
+        // ---- 左上角：关卡胶囊 ----
+        pill = UIButton(type: .system)
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        pill.backgroundColor = UIColor(white: 1, alpha: 0.10)
+        pill.layer.cornerRadius = 17
+        pill.layer.cornerCurve = .continuous
+        pill.layer.borderWidth = 1
+        pill.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
+        pill.contentEdgeInsets = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 12)
+        pill.addTarget(self, action: #selector(showSheet), for: .touchUpInside)
 
         titleLabel = UILabel()
         titleLabel.textColor = .white
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.text = levelNames[0]
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.isUserInteractionEnabled = false
+        pill.addSubview(titleLabel)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 14),
+            titleLabel.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: pill.trailingAnchor, constant: -12),
+        ])
+        view.addSubview(pill)
 
         hud = UILabel()
-        hud.textColor = textDim
-        hud.font = .systemFont(ofSize: 11, weight: .regular)
-        hud.textAlignment = .right
-        hud.text = "…"
-        hud.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        hud.textColor = UIColor(white: 1, alpha: 0.45)
+        hud.font = .systemFont(ofSize: 10.5, weight: .regular)
+        hud.numberOfLines = 2
+        hud.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(hud)
 
-        let head = UIStackView(arrangedSubviews: [titleLabel, hud])
-        head.axis = .horizontal
-        head.alignment = .firstBaseline
-        head.spacing = 8
+        // ---- 右下角：设置 ----
+        gear = UIButton(type: .system)
+        gear.translatesAutoresizingMaskIntoConstraints = false
+        gear.setImage(UIImage(systemName: "slider.horizontal.3",
+                              withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)),
+                      for: .normal)
+        gear.tintColor = UIColor(white: 1, alpha: 0.92)
+        gear.backgroundColor = UIColor(white: 1, alpha: 0.10)
+        gear.layer.cornerRadius = 24
+        gear.layer.cornerCurve = .continuous
+        gear.layer.borderWidth = 1
+        gear.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
+        gear.addTarget(self, action: #selector(showSheet), for: .touchUpInside)
+        view.addSubview(gear)
 
-        // 关卡：横向滚动条，避免 7 个字挤成一坨
-        levelBar = UIStackView()
-        levelBar.axis = .horizontal
-        levelBar.spacing = 6
-        levelBar.translatesAutoresizingMaskIntoConstraints = false
-        for (i, name) in levelNames.enumerated() {
-            let b = makeChip(name)
-            b.tag = i
-            b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
-            levelChips.append(b)
-            levelBar.addArrangedSubview(b)
-        }
-        let scroll = UIScrollView()
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.showsHorizontalScrollIndicator = false
-        scroll.showsVerticalScrollIndicator = false
-        scroll.addSubview(levelBar)
         NSLayoutConstraint.activate([
-            levelBar.topAnchor.constraint(equalTo: scroll.topAnchor),
-            levelBar.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
-            levelBar.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
-            levelBar.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
-            levelBar.heightAnchor.constraint(equalTo: scroll.heightAnchor),
-            scroll.heightAnchor.constraint(equalToConstant: 30),
+            pill.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 14),
+            pill.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            pill.heightAnchor.constraint(equalToConstant: 34),
+            pill.widthAnchor.constraint(greaterThanOrEqualToConstant: 96),
+            hud.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 4),
+            hud.topAnchor.constraint(equalTo: pill.bottomAnchor, constant: 6),
+            hud.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -14),
+            gear.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            gear.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            gear.widthAnchor.constraint(equalToConstant: 48),
+            gear.heightAnchor.constraint(equalToConstant: 48),
         ])
 
-        // 显示区：视角 / 雾 / 穹顶 / 云
-        btnReset = makeChip("重置视角")
-        btnReset.addTarget(self, action: #selector(onReset), for: .touchUpInside)
-        btnFog = makeChip("雾")
-        btnFog.addTarget(self, action: #selector(onToggleFog), for: .touchUpInside)
-        btnDome = makeChip("穹顶")
-        btnDome.addTarget(self, action: #selector(onToggleDome), for: .touchUpInside)
-        btnCloud = makeChip("云")
-        btnCloud.addTarget(self, action: #selector(onToggleCloud), for: .touchUpInside)
-        let row = UIStackView(arrangedSubviews: [btnReset, btnFog, btnDome, btnCloud])
-        row.axis = .horizontal
-        row.spacing = 6
-        row.distribution = .fillProportionally
+        // ---- 遮罩 + 底部设置面板 ----
+        scrim = UIControl()
+        scrim.translatesAutoresizingMaskIntoConstraints = false
+        scrim.backgroundColor = UIColor(white: 0, alpha: 0.35)
+        scrim.alpha = 0
+        scrim.isHidden = true
+        scrim.addTarget(self, action: #selector(hideSheet), for: .touchUpInside)
+        view.addSubview(scrim)
+
+        sheet = UIView()
+        sheet.translatesAutoresizingMaskIntoConstraints = false
+        sheet.backgroundColor = UIColor(white: 0.055, alpha: 0.99)
+        sheet.layer.cornerRadius = 24
+        sheet.layer.cornerCurve = .continuous
+        sheet.layer.borderWidth = 1
+        sheet.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
+        sheet.isHidden = true
+        view.addSubview(sheet)
+
+        let grabber = UIView()
+        grabber.translatesAutoresizingMaskIntoConstraints = false
+        grabber.backgroundColor = UIColor(white: 1, alpha: 0.24)
+        grabber.layer.cornerRadius = 2
+        sheet.addSubview(grabber)
+
+        // 关卡区：七关排两行
+        let levelTitle = UILabel()
+        levelTitle.text = "关卡"
+        levelTitle.textColor = UIColor(white: 1, alpha: 0.45)
+        levelTitle.font = .systemFont(ofSize: 11, weight: .medium)
+
+        func chipRow(_ idxs: [Int]) -> UIStackView {
+            let row = UIStackView()
+            row.axis = .horizontal; row.spacing = 6; row.alignment = .leading
+            for i in idxs {
+                let b = makeChip(levelNames[i])
+                b.tag = i
+                b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
+                levelChips.append(b)
+                row.addArrangedSubview(b)
+            }
+            row.addArrangedSubview(UIView())   // 撑开，靠左排
+            return row
+        }
+        let levelGrid = UIStackView(arrangedSubviews: [chipRow([0,1,2,3]), chipRow([4,5,6])])
+        levelGrid.axis = .vertical
+        levelGrid.spacing = 6
+        levelGrid.alignment = .leading
+
+        // 显示开关
+        swFog = makeSwitch(#selector(onSwitchFog))
+        swCloud = makeSwitch(#selector(onSwitchCloud))
+        swDome = makeSwitch(#selector(onSwitchDome))
+        swFP = makeSwitch(#selector(onSwitchFP))
+
+        var rowsV: [UIView] = [levelTitle, levelGrid, hairline(), makeRow("雾", swFog),
+                       makeRow("云（原版体积云）", swCloud), makeRow("天空穹顶", swDome),
+                       makeRow("第一人称（贴地视角）", swFP), hairline()]
 
         expoLabel = UILabel()
-        expoLabel.textColor = textDim
+        expoLabel.textColor = UIColor(white: 1, alpha: 0.45)
         expoLabel.font = .systemFont(ofSize: 11, weight: .medium)
         expoLabel.text = "曝光 ×7.59"
 
         expoSlider = UISlider()
         expoSlider.minimumValue = -2
         expoSlider.maximumValue = 2.5
-        expoSlider.value = 0.88          // 10^0.88 ≈ 7.6×，烛窟平均亮度 0.018 的可用档位
+        expoSlider.value = 0.88
         expoSlider.minimumTrackTintColor = accent
         expoSlider.maximumTrackTintColor = UIColor(white: 1, alpha: 0.12)
         expoSlider.thumbTintColor = .white
         expoSlider.addTarget(self, action: #selector(onExposure), for: .valueChanged)
 
-        let expoStack = UIStackView(arrangedSubviews: [expoLabel, expoSlider])
-        expoStack.axis = .vertical
-        expoStack.spacing = 2
+        let expoRow = UIStackView(arrangedSubviews: [expoLabel, expoSlider])
+        expoRow.axis = .horizontal; expoRow.spacing = 12; expoRow.alignment = .center
+        rowsV.append(expoRow)
 
-        let stack = UIStackView(arrangedSubviews: [head, scroll, row, expoStack])
+        let stack = UIStackView(arrangedSubviews: rowsV)
         stack.axis = .vertical
-        stack.spacing = 10
+        stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(stack)
+        sheet.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            card.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            card.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            card.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
-            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
+            scrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrim.topAnchor.constraint(equalTo: view.topAnchor),
+            scrim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            sheet.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            sheet.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            sheet.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            grabber.topAnchor.constraint(equalTo: sheet.topAnchor, constant: 8),
+            grabber.centerXAnchor.constraint(equalTo: sheet.centerXAnchor),
+            grabber.widthAnchor.constraint(equalToConstant: 36),
+            grabber.heightAnchor.constraint(equalToConstant: 4),
+            stack.topAnchor.constraint(equalTo: sheet.topAnchor, constant: 24),
+            stack.leadingAnchor.constraint(equalTo: sheet.leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: sheet.trailingAnchor, constant: -18),
+            stack.bottomAnchor.constraint(equalTo: sheet.bottomAnchor, constant: -20),
         ])
 
         refreshLevelChips()
+        refreshToggles()
+        syncTitle()
+    }
+
+    private func makeSwitch(_ action: Selector) -> UISwitch {
+        let sw = UISwitch()
+        sw.onTintColor = accent
+        sw.translatesAutoresizingMaskIntoConstraints = false
+        sw.addTarget(self, action: action, for: .valueChanged)
+        return sw
+    }
+
+    private func makeRow(_ title: String, _ sw: UISwitch) -> UIView {
+        let l = UILabel()
+        l.text = title
+        l.textColor = UIColor(white: 1, alpha: 0.9)
+        l.font = .systemFont(ofSize: 13, weight: .regular)
+        let row = UIStackView(arrangedSubviews: [l, sw])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.distribution = .equalSpacing
+        row.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        return row
+    }
+
+    private func hairline() -> UIView {
+        let v = UIView()
+        v.backgroundColor = UIColor(white: 1, alpha: 0.07)
+        v.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return v
+    }
+
+    private func syncTitle() {
+        guard pill != nil else { return }
+        titleLabel.text = levelNames[cur] + "  ▾"
+    }
+
+    @objc private func showSheet() {
+        guard !sheetShown else { return }
+        sheetShown = true
+        scrim.isHidden = false
+        sheet.isHidden = false
+        sheet.transform = CGAffineTransform(translationX: 0, y: 40)
+        sheet.alpha = 0
+        view.bringSubviewToFront(sheet)
+        view.bringSubviewToFront(gear)
+        UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseOut]) {
+            self.scrim.alpha = 1
+            self.sheet.alpha = 1
+            self.sheet.transform = .identity
+        }
+    }
+
+    @objc private func hideSheet() {
+        guard sheetShown else { return }
+        sheetShown = false
+        UIView.animate(withDuration: 0.2, animations: {
+            self.scrim.alpha = 0
+            self.sheet.alpha = 0
+            self.sheet.transform = CGAffineTransform(translationX: 0, y: 40)
+        }) { _ in
+            self.scrim.isHidden = true
+            self.sheet.isHidden = true
+        }
     }
 
     private func makeChip(_ title: String) -> UIButton {
@@ -253,13 +382,11 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     }
 
     private func refreshToggles() {
-        guard let r = renderer else { return }
-        style(btnFog, on: !r.debugSkipFogPost)
-        style(btnDome, on: !r.debugSkipSkyDome)
-        style(btnCloud, on: !r.hideCloud)
-        btnFog.setTitle(r.debugSkipFogPost ? "雾 关" : "雾 开", for: .normal)
-        btnDome.setTitle(r.debugSkipSkyDome ? "穹顶 关" : "穹顶 开", for: .normal)
-        btnCloud.setTitle(r.hideCloud ? "云 关" : "云 开", for: .normal)
+        guard let r = renderer, swFog != nil else { return }
+        swFog.setOn(!r.debugSkipFogPost, animated: false)
+        swDome.setOn(!r.debugSkipSkyDome, animated: false)
+        swCloud.setOn(!r.hideCloud, animated: false)
+        swFP.setOn(r.firstPerson, animated: false)
     }
 
     /// 当前进程占用，切关时打点，用来判断是不是被内存杀掉
@@ -290,7 +417,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
         cur = index
         refreshLevelChips()
-        titleLabel.text = levelNames[index]
+        syncTitle()
+        hideSheet()
         hud.text = "加载中…"
         loading = true
 
@@ -326,6 +454,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                 }
                 self.hud.text = text
                 self.refreshToggles()
+                self.syncTitle()
             }
         }
     }
@@ -338,28 +467,29 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
     @objc private func onReset() {
         guard let r = renderer else { return }
-        r.az = 2.10; r.el = 0.28; r.zoom = 1.0; r.targetShift = SIMD2<Float>(0, 0)
+        r.az = 2.10; r.el = r.firstPerson ? 0 : 0.28; r.zoom = 1.0; r.targetShift = SIMD2<Float>(0, 0)
         r.exposureGain = 1.0
         expoSlider.value = 0.88          // 10^0.88 ≈ 7.6×，烛窟平均亮度 0.018 的可用档位
         expoLabel.text = "曝光 ×7.59"
     }
 
-    @objc private func onToggleFog() {
-        guard let r = renderer else { return }
-        r.debugSkipFogPost.toggle()
-        refreshToggles()
+    @objc private func onSwitchFog(_ sw: UISwitch) {
+        renderer?.debugSkipFogPost = !sw.isOn
     }
 
-    @objc private func onToggleDome() {
-        guard let r = renderer else { return }
-        r.debugSkipSkyDome.toggle()
-        refreshToggles()
+    @objc private func onSwitchDome(_ sw: UISwitch) {
+        renderer?.debugSkipSkyDome = !sw.isOn
     }
 
-    @objc private func onToggleCloud() {
+    @objc private func onSwitchCloud(_ sw: UISwitch) {
+        renderer?.hideCloud = !sw.isOn
+    }
+
+    @objc private func onSwitchFP(_ sw: UISwitch) {
         guard let r = renderer else { return }
-        r.hideCloud.toggle()
-        refreshToggles()
+        r.firstPerson = sw.isOn
+        r.el = 0
+        r.targetShift = SIMD2<Float>(0, 0)
     }
 
     @objc private func onExposure() {
@@ -377,8 +507,17 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     @objc private func onPan(_ g: UIPanGestureRecognizer) {
         guard let r = renderer else { return }
         let t = g.translation(in: view3d)
-        r.targetShift.x -= Float(t.x) * 0.02
-        r.targetShift.y -= Float(t.y) * 0.02
+        let k: Float = r.firstPerson ? 0.06 : 0.02
+        let s = Float(t.x) * k, f = Float(t.y) * k
+        if r.firstPerson {
+            // 地面视角：两指平移 = 沿相机朝向水平移动（前推/横移），和游戏里走位一致
+            let dx = -sin(r.az), dz = cos(r.az)
+            r.targetShift.x += (cos(r.az) * s + dx * f)
+            r.targetShift.y += (-sin(r.az) * s + dz * f)
+        } else {
+            r.targetShift.x -= s
+            r.targetShift.y -= f
+        }
         g.setTranslation(.zero, in: view3d)
     }
 

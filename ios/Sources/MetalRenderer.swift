@@ -264,6 +264,8 @@ final class MetalRenderer {
     private var waterVB: MTLBuffer?
     private var waterIB: MTLBuffer?
 
+    /// true = 站在关卡里平视（默认）；false = 旧的整体绕轨道俯瞰
+    var firstPerson = true
     var az: Float = 2.10
     var el: Float = 0.28
     var zoom: Float = 1.0
@@ -287,7 +289,7 @@ final class MetalRenderer {
     var averageSky = SIMD3<Float>(0.05, 0.09, 0.16)
     /// 云族（CloudSh）在 GEO0 里是带 alpha 的体积片，原版走混合；我们现在没有混合配置，硬画会变成大块黑斑。
     /// 默认隐藏，界面「云」按钮可以打开做对照。
-    var hideCloud = true
+    var hideCloud = true    // 云块需要引擎的 cloudPackedBin 才能正确着色，没算出来之前默认不开
     /// 给界面用的关卡统计
     private(set) var stats = ""
 
@@ -726,16 +728,38 @@ final class MetalRenderer {
         ensureTargets(w, h)
         guard let sceneTex, let sceneTex2, let depthTex else { return }
 
-        let dist = radius * 1.15 * zoom
+        // 摄像机：默认「第一人称 / 地面视角」——站在关卡的可玩区域里平视，
+        // 和游戏里进去看到的一样；俯瞰模式保留旧的绕轨道相机（做成俯视沙盘）。
+        // 之前默认就是绕轨道 + dist≈15 m：对烛窟这种洞窟，相机在洞顶外面往洞里看，
+        // 结果就是「草地一片绿、洞顶背面一整块黑」——不是材质错，是机位在模型外面。
         let centerShifted = center + SIMD3<Float>(targetShift.x, 0, targetShift.y)
-        let eye = centerShifted + SIMD3<Float>(cos(el)*cos(az), sin(el), cos(el)*sin(az)) * dist
-        let fwd = simd_normalize(centerShifted - eye)
-        let up = SIMD3<Float>(0, 1, 0)
-        let right = simd_normalize(simd_cross(fwd, up))
-        let camUp = simd_cross(right, fwd)
-        let nearD = max(dist * 0.01, 0.05), farD = dist * 20
-        let proj = perspective(50.0 * Float.pi / 180, Float(w) / Float(h), nearD, farD)
-        let viewM = lookAt(eye, centerShifted, camUp)
+        let eye: SIMD3<Float>
+        let lookAtPoint: SIMD3<Float>
+        let camUp = SIMD3<Float>(0, 1, 0)
+        let fovDeg: Float
+        let nearD: Float, farD: Float
+        if firstPerson {
+            let b = man?.bounds ?? [center.x, center.y, center.z, center.x, center.y, center.z]
+            let minY = min(b.count >= 6 ? b[1] : center.y, center.y)
+            let sea = man?.seaLevel
+            // 站高 1.7 m：优先用关卡海平面（烛窟 -5），没有就用包围盒底面
+            let eyeY = (sea != nil ? sea! + 1.7 : minY + 1.7)
+            eye = SIMD3<Float>(center.x + targetShift.x, max(eyeY, minY + 0.4), center.z + targetShift.y)
+            let dir = SIMD3<Float>(cos(el) * cos(az), sin(el), cos(el) * sin(az))
+            lookAtPoint = eye + dir
+            nearD = 0.08
+            farD = 1200
+            fovDeg = min(100, max(25, 55 * zoom))
+        } else {
+            let dist = radius * 1.15 * zoom
+            eye = centerShifted + SIMD3<Float>(cos(el)*cos(az), sin(el), cos(el)*sin(az)) * dist
+            lookAtPoint = centerShifted
+            nearD = max(dist * 0.01, 0.05)
+            farD = dist * 20
+            fovDeg = 50
+        }
+        let proj = perspective(fovDeg * Float.pi / 180, Float(w) / Float(h), nearD, farD)
+        let viewM = lookAt(eye, lookAtPoint, camUp)
         let vp = proj * viewM
         updateClusters(vp, w, h)
 
@@ -878,7 +902,8 @@ final class MetalRenderer {
         sky.u_cloudAbsorption = envNum("cloudAbsorption", 0)
         sky.u_cloudPatchiness = envNum("cloudPatchiness", 0)
         // fs 末段 alpha = 1 - u_skyFadeOut，且颜色按同一权重与雾色混合：1 会把整块穹顶压成全黑（上一轮真机整屏黑即此）
-        sky.u_skyFadeOut = 0
+        // 洞穴关（烛窟/罐洞）原版会把天空淡出成雾色，EnvNode 里有 skyFadeOut 就直接用
+        sky.u_skyFadeOut = envNum("skyFadeOut", 0)
         if let dome, !debugSkipSkyDome {
             dome.setProbeColor(SIMD3<Float>(averageSky.x, averageSky.y, averageSky.z))
             dome.encode(enc, eye: eye, radiusScale: farD * 0.9,

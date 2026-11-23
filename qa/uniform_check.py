@@ -25,8 +25,9 @@ def main():
     s = open(RENDER, encoding="utf8").read()
 
     # 1) 穹顶淡出权重：fs 末段 alpha/颜色都吃它，必须是 0
-    need(re.search(r"sky\.u_skyFadeOut\s*=\s*0", s) is not None,
-         "Dome u_skyFadeOut = 0（1 会把整块穹顶压黑）")
+    # 取关卡 EnvNode 的 skyFadeOut（洞穴关原版就靠它把天空淡出），缺省必须回落到 0，绝不允许写死 1
+    need(re.search(r'sky\.u_skyFadeOut\s*=\s*envNum\("skyFadeOut",\s*0\)', s) is not None,
+         "Dome u_skyFadeOut = envNum(skyFadeOut, 0)（1 会把整块穹顶压黑）")
     need("sky.u_skyFadeOut = 1" not in s, "没有残留 u_skyFadeOut = 1")
 
     # 2) 原版 Ambience uniforms 映射
