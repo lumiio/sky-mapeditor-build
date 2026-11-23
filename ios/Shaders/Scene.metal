@@ -436,3 +436,20 @@ fragment float4 skyFS(SkyOut in [[stage_in]], constant SkyU &u [[constant buffer
   float3 c = mix(u.bands[4 - k].xyz, u.bands[4 - k - 1].xyz, f);
   return float4(c, 1.0);
 }
+
+// ---- SkyDomeFade：原版穹顶给的是 u_probeCube（属性与 Mesh 一致）----
+struct DomeOut { float4 pos [[position]]; float3 world; };
+vertex DomeOut domeVS(VIn in [[stage_in]], constant U &u [[buffer(1)]]) {
+  DomeOut o;
+  float3 w = in.pos;
+  o.world = w;
+  o.pos = u.viewProj * float4(w, 1.0);
+  return o;
+}
+fragment float4 domeFS(DomeOut in [[stage_in]], constant U &u [[buffer(1)]],
+                       texturecube<float> probe [[texture(0)]], sampler smp [[sampler(0)]]) {
+  float3 dir = normalize(in.world - u.eyePos.xyz);
+  // 原版 Mesh 顶点里 probe 用 textureLod(probe, N, 5.0)；穹顶同理取低阶，避免接缝
+  float3 c = probe.sample(smp, dir, level(4.0)).xyz;
+  return float4(c, 1.0);
+}

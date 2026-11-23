@@ -77,6 +77,7 @@ final class MetalRenderer {
     private var fogOut: MTLTexture?
     private var waterPipe: MTLRenderPipelineState?
     private var skyPipe: MTLRenderPipelineState?
+    private var domePipe: MTLRenderPipelineState?
     private var depthState: MTLDepthStencilState?
     private var waterDepthState: MTLDepthStencilState?
     private var sampler: MTLSamplerState?
@@ -220,6 +221,12 @@ final class MetalRenderer {
         skp.fragmentFunction = library.makeFunction(name: "skyFS")
         skp.colorAttachments[0].pixelFormat = .rgba16Float
         skyPipe = try? dev.makeRenderPipelineState(descriptor: skp)
+        let dpd = MTLRenderPipelineDescriptor()
+        dpd.vertexFunction = library.makeFunction(name: "domeVS")
+        dpd.fragmentFunction = library.makeFunction(name: "domeFS")
+        dpd.vertexDescriptor = vd
+        dpd.colorAttachments[0].pixelFormat = .rgba16Float
+        domePipe = try? dev.makeRenderPipelineState(descriptor: dpd)
             waterPipe = try dev.makeRenderPipelineState(descriptor: wrpd)
             Boot.log("water 管线 ok")
         } catch { Boot.log("pipeline 失败: \(error)"); return nil }
@@ -550,18 +557,6 @@ final class MetalRenderer {
         rp.depthAttachment.clearDepth = 1
 
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
-        if let skyPipe {
-            struct SB { var bands: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>); var misc: SIMD4<Float> }
-            var sb = SB(bands: (envColor4("tintTop", SIMD4<Float>(0.0, 0.02, 0.05, 1)),
-                                envColor4("tintMidTop", SIMD4<Float>(0.02, 0.05, 0.09, 1)),
-                                envColor4("tintMidMid", SIMD4<Float>(0.05, 0.08, 0.12, 1)),
-                                envColor4("tintMidBot", SIMD4<Float>(0.09, 0.11, 0.13, 1)),
-                                envColor4("tintBot", SIMD4<Float>(0.12, 0.13, 0.12, 1))),
-                        misc: SIMD4<Float>(Float(w) / Float(h), tan(25.0 * Float.pi / 180.0), 0, 0))
-            enc.setRenderPipelineState(skyPipe)
-            enc.setFragmentBytes(&sb, length: MemoryLayout<SB>.stride, index: 1)
-            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-        }
         enc.setRenderPipelineState(meshPipe)
         enc.setDepthStencilState(depthState)
         enc.setVertexBuffer(vbuf, offset: 0, index: 0)
@@ -584,7 +579,18 @@ final class MetalRenderer {
             enc.setFragmentTexture(posTex, index: 6)
             enc.setFragmentTexture(colTex, index: 7)
         }
-        for r in man.ranges {
+        // SkyDomeFade 穹顶：原版那一关的 Plane 段（6 索引）走穹顶管线，采 u_probeCube
+        if let domePipe, let probeCube {
+            for r in man.ranges where r.name.lowercased() == "plane" {
+                enc.setRenderPipelineState(domePipe)
+                enc.setFragmentTexture(probeCube, index: 0)
+                enc.setFragmentSamplerState(clampSampler, index: 0)
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
+                                          indexBuffer: ibuf, indexBufferOffset: r.start * 4)
+            }
+            enc.setRenderPipelineState(meshPipe)
+        }
+        for r in man.ranges where r.name.lowercased() != "plane" {
             let c = SIMD4<Float>(r.color.count >= 3 ? r.color[0] : 1, r.color.count >= 3 ? r.color[1] : 1, r.color.count >= 3 ? r.color[2] : 1, 1)
             if let n = r.texture, let t = tex(n) { enc.setFragmentTexture(t, index: 0) } else { enc.setFragmentTexture(fallbackTex, index: 0) }
             if let n = r.texture2, let t = tex(n) { enc.setFragmentTexture(t, index: 1) } else { enc.setFragmentTexture(fallbackTex, index: 1) }
