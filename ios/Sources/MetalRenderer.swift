@@ -995,6 +995,9 @@ final class MetalRenderer {
             cb.waitUntilCompleted()
             let l = averageLuminance(of: fogOut)
             if l > 0, l.isFinite { averageLum = l }
+            if frameIdx <= 6 {
+                Boot.log("探针 f\(frameIdx) 地面75%: 地形=\(probeHalf(sceneTex, 0.5, 0.75)) 雾后=\(probeHalf(fogOut, 0.5, 0.75)) | 天空10%: 地形=\(probeHalf(sceneTex, 0.5, 0.1))")
+            }
         }
     }
 
@@ -1031,6 +1034,22 @@ final class MetalRenderer {
     }
 
     /// 32×32 天空目标求算术平均（等价于引擎对天空盒最粗 mip 取平均）
+
+    private func probeHalf(_ tex: MTLTexture?, _ fx: Float, _ fy: Float) -> String {
+        guard let tex else { return "nil" }
+        let w = tex.width, h = tex.height
+        let x = min(w - 1, Int(Float(w) * fx)), y = min(h - 1, Int(Float(h) * fy))
+        var buf = [UInt8](repeating: 0, count: 8)
+        buf.withUnsafeMutableBytes { raw in
+            tex.getBytes(raw.baseAddress!, bytesPerRow: 8,
+                         from: MTLRegionMake2D(x, y, 1, 1), mipmapLevel: 0)
+        }
+        func half(_ i: Int) -> Float {
+            Float(Float16(bitPattern: UInt16(buf[i]) | (UInt16(buf[i + 1]) << 8)))
+        }
+        return String(format: "(%.3f, %.3f, %.3f, %.3f)", half(0), half(2), half(4), half(6))
+    }
+
     private func averageSkyColor(of tex: MTLTexture) -> SIMD3<Float> {
         let cols = tex.width, rows = tex.height
         let bpr = cols * 8
