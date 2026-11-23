@@ -122,9 +122,17 @@ final class TerrainPass {
             return t
         }
         // 槽位严格取 IR 的 air.location_index：3=u_lightPRTex 4=u_lightCSTex 5=u_grassMaskTex 6=u_grassNorm1Tex 7=u_grassNorm2Tex
+        func solid(_ v: UInt8) -> MTLTexture? {
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+            td.usage = .shaderRead
+            guard let t = device.makeTexture(descriptor: td) else { return nil }
+            var px: [UInt8] = [v, v, v, v]
+            t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &px, bytesPerRow: 4)
+            return t
+        }
         var slots: [MTLTexture?] = [nil, nil, nil, nil, nil, nil, nil, nil]
-        slots[3] = loadTex("White")          // u_lightPRTex（光簇图集，数据待解，暂用 1x1）
-        slots[4] = loadTex("White")          // u_lightCSTex
+        slots[3] = solid(255)          // u_lightPRTex（光簇图集，数据待解，暂用 1x1）
+        slots[4] = solid(255)          // u_lightCSTex
         slots[5] = loadTex("GrassMask")
         slots[6] = loadTex("GrassNorTex0")
         slots[7] = loadTex("GrassNorTex1")
