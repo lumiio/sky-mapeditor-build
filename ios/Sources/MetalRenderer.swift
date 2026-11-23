@@ -739,9 +739,9 @@ final class MetalRenderer {
         let fovDeg: Float
         let nearD: Float, farD: Float
         if firstPerson {
-            let b = mm.bounds.count >= 6 ? mm.bounds : [center.x, center.y, center.z, center.x, center.y, center.z]
+            let b = man.bounds.count >= 6 ? man.bounds : [center.x, center.y, center.z, center.x, center.y, center.z]
             let minY = min(b.count >= 6 ? b[1] : center.y, center.y)
-            let sea = mm.seaLevel
+            let sea = man.seaLevel
             // 站高 1.7 m：优先用关卡海平面（烛窟 -5），没有就用包围盒底面
             let eyeY = (sea != nil ? sea! + 1.7 : minY + 1.7)
             eye = SIMD3<Float>(center.x + targetShift.x, max(eyeY, minY + 0.4), center.z + targetShift.y)
