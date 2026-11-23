@@ -172,7 +172,11 @@ final class DomePass {
         enc.setFragmentBytes(&perPass, length: MemoryLayout<PerPassUniforms>.stride, index: 1)
         enc.setFragmentBytes(&perFrame, length: MemoryLayout<PerFrameUniforms>.stride, index: 2)
         if let probeCube { enc.setFragmentTexture(probeCube, index: 3) }
-        if let sampler { enc.setFragmentSamplerState(sampler, index: 0) }
+        // 原版 texturecube 声明里 sampler 的槽位在 .ref 里没有显式编号，0..3 全绑同一个采样器，避免漏绑触发校验失败
+        if let sampler {
+            for i in 0..<4 { enc.setFragmentSamplerState(sampler, index: i) }
+            enc.setVertexSamplerState(sampler, index: 0)
+        }
         enc.drawIndexedPrimitives(type: .triangle, indexCount: ic, indexType: .uint32,
                                   indexBuffer: ibuf, indexBufferOffset: 0)
     }
