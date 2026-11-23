@@ -111,6 +111,7 @@ final class MetalRenderer {
     var center = SIMD3<Float>(0, 0, 0)
     var radius: Float = 10
     var waterY: Float = -5
+    var averageLum: Float = 1
 
     private var sceneTex: MTLTexture?
     private var sceneTex2: MTLTexture?
@@ -668,7 +669,7 @@ final class MetalRenderer {
                             avgSkybox: envColor("tintTop", SIMD3<Float>(0.02, 0.05, 0.1)),
                             atmSun: envColor("sunColor", SIMD3<Float>(1, 0.95, 0.85)),
                             earth: SIMD4<Float>(0, -50000, 0, 50000),
-                            vp: SIMD4<Float>(Float(w), Float(h), 1, 0), avgLum: SIMD4<Float>(1, 0, 0, 0))
+                            vp: SIMD4<Float>(Float(w), Float(h), 1, 0), avgLum: SIMD4<Float>(averageLum, 0, 0, 0))
                 uenc.setRenderPipelineState(fogUpsamplePipe)
                 uenc.setFragmentBytes(&fu, length: MemoryLayout<FU>.stride, index: 1)
                 uenc.setFragmentTexture(sceneTex2, index: 0)
@@ -721,6 +722,39 @@ final class MetalRenderer {
         }
         cb.present(drawable)
         cb.commit()
+        // 原版视线自适应：用上一帧 FogUpsample 输出的几何平均亮度做 u_averageLum
+        if let fogOut {
+            cb.waitUntilCompleted()
+            let l = averageLuminance(of: fogOut)
+            if l > 0, l.isFinite { averageLum = l }
+        }
+    }
+
+    /// server.cjs: Te = 1/max(1e-4,px)-1；log(max(1e-4, 0.2126R+0.7152G+0.0722B))，取几何平均
+    private func averageLuminance(of tex: MTLTexture) -> Float {
+        let rows = 8, cols = 128
+        var sumLog: Float = 0; var n: Float = 0
+        let bpr = cols * 8   // rgba16Float 每像素 8B
+        var buf = [UInt8](repeating: 0, count: bpr)
+        for r in 0..<rows {
+            let y = min(tex.height - 1, r * max(1, tex.height / rows))
+            buf.withUnsafeMutableBytes { raw in
+                tex.getBytes(raw.baseAddress!, bytesPerRow: bpr,
+                             from: MTLRegionMake2D(0, y, cols, 1), mipmapLevel: 0)
+            }
+            for c in 0..<cols {
+                let p = c * 8
+                let r0 = Float(Float16(bitPattern: UInt16(buf[p]) | (UInt16(buf[p+1]) << 8)))
+                let g0 = Float(Float16(bitPattern: UInt16(buf[p+2]) | (UInt16(buf[p+3]) << 8)))
+                let b0 = Float(Float16(bitPattern: UInt16(buf[p+4]) | (UInt16(buf[p+5]) << 8)))
+                let rr = max(1e-4, 1.0 / max(1e-4, r0) - 1.0)
+                let gg = max(1e-4, 1.0 / max(1e-4, g0) - 1.0)
+                let bb = max(1e-4, 1.0 / max(1e-4, b0) - 1.0)
+                sumLog += log(max(1e-4, 0.2126 * rr + 0.7152 * gg + 0.0722 * bb))
+                n += 1
+            }
+        }
+        return n > 0 ? exp(sumLog / n) : 1
     }
 
     private func perspective(_ fovy: Float, _ aspect: Float, _ near: Float, _ far: Float) -> simd_float4x4 {
