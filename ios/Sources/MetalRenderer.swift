@@ -271,6 +271,11 @@ final class MetalRenderer {
     var waterY: Float = -5
     var averageLum: Float = 1
 
+    /// 原版 u_averageSkyColor：由引擎对天空盒做均值得到，这里用「把穹顶渲进 32×32 再读回求均值」复现
+    var averageSky = SIMD3<Float>(0.05, 0.09, 0.16)
+    private var skyAvgTex: MTLTexture?
+    private var frameIdx = 0
+
     private var sceneTex: MTLTexture?
     private var sceneTex2: MTLTexture?
     private var depthTex: MTLTexture?
@@ -645,6 +650,11 @@ final class MetalRenderer {
         let ld = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
         ld.usage = [.renderTarget, .shaderRead]
         ldrTex = device.makeTexture(descriptor: ld)
+        if skyAvgTex == nil {
+            let sd0 = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 32, height: 32, mipmapped: false)
+            sd0.usage = [.renderTarget, .shaderRead]
+            skyAvgTex = device.makeTexture(descriptor: sd0)
+        }
         let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: w, height: h, mipmapped: false)
         dd.usage = [.renderTarget, .shaderRead]
         depthTex = device.makeTexture(descriptor: dd)
@@ -731,6 +741,7 @@ final class MetalRenderer {
             enc.setFragmentTexture(colTex, index: 7)
         }
             // SkyDomeFade 穹顶：PerObject 块 = AmbienceSky 的色彩 + 引擎默认（数值见 docs/ir 的 IR）
+            var sky = PerObjectUniforms()
             var skyF = PerFrameUniforms()
             skyF.u_viewProjInv = mat4(simd_inverse(vp))
             skyF.u_eyePos = t3(eye)
@@ -738,10 +749,15 @@ final class MetalRenderer {
             skyF.u_sunDir = t3(sunDir)
             skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
             skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
+            // 地形片元用 mix(u_averageSkyColor, u_sunColor, a_light1.x) 作为环境光，之前这两个字段是 0 → 全场黑
+            skyF.u_averageSkyColor = (averageSky.x, averageSky.y, averageSky.z)
+            skyF.u_averageSkyOcclusion = 1
+            skyF.u_averageSkyboxColor = (averageSky.x, averageSky.y, averageSky.z, 1)
+            skyF.u_averageProbeColor = (averageSky.x, averageSky.y, averageSky.z, 1)
             var skyP = PerPassUniforms()
             skyP.u_viewportSize = (Float(w), Float(h), 1 / Float(w), 1 / Float(h))
             if let domePipe {
-                var sky = PerObjectUniforms()
+                sky = PerObjectUniforms()
                 sky.u_skyColor = t3p(envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)))
                 sky.u_horizonColor = t3(envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)))
                 sky.u_horizonFalloff = envNum("horizonFalloff", 0)
@@ -806,6 +822,27 @@ final class MetalRenderer {
         }
         }
         enc.endEncoding()
+
+        // 天空均值：把同一个穹顶管路渲进 32×32，读回做算术平均（每 30 帧一次）
+        frameIdx += 1
+        let doSkyAvg = (frameIdx % 30 == 1)
+        if doSkyAvg, let domePipe, let skyAvgTex {
+            let rp2 = MTLRenderPassDescriptor()
+            rp2.colorAttachments[0].texture = skyAvgTex
+            rp2.colorAttachments[0].loadAction = .clear
+            rp2.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+            rp2.colorAttachments[0].storeAction = .store
+            if let e2 = cb.makeRenderCommandEncoder(descriptor: rp2) {
+                e2.setRenderPipelineState(domePipe)
+                e2.setFragmentBytes(&sky, length: MemoryLayout<PerObjectUniforms>.stride, index: 2)
+                e2.setFragmentBytes(&skyF, length: MemoryLayout<PerFrameUniforms>.stride, index: 3)
+                var p2 = skyP
+                p2.u_viewportSize = (32, 32, 1.0 / 32, 1.0 / 32)
+                e2.setFragmentBytes(&p2, length: MemoryLayout<PerPassUniforms>.stride, index: 4)
+                e2.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                e2.endEncoding()
+            }
+        }
 
         // 场景色拷到第二张目标
         if let blit = cb.makeBlitCommandEncoder() {
@@ -943,6 +980,10 @@ final class MetalRenderer {
         cb.present(drawable)
         cb.commit()
         // 原版视线自适应：用上一帧 FogUpsample 输出的几何平均亮度做 u_averageLum
+        if doSkyAvg, let skyAvgTex {
+            cb.waitUntilCompleted()
+            averageSky = averageSkyColor(of: skyAvgTex)
+        }
         if let fogOut {
             cb.waitUntilCompleted()
             let l = averageLuminance(of: fogOut)
@@ -980,6 +1021,30 @@ final class MetalRenderer {
             }
         }
         return n > 0 ? exp(sumLog / n) : 1
+    }
+
+    /// 32×32 天空目标求算术平均（等价于引擎对天空盒最粗 mip 取平均）
+    private func averageSkyColor(of tex: MTLTexture) -> SIMD3<Float> {
+        let cols = tex.width, rows = tex.height
+        let bpr = cols * 8
+        var buf = [UInt8](repeating: 0, count: bpr)
+        var acc = SIMD3<Float>(0, 0, 0); var n: Float = 0
+        for r in 0..<rows {
+            buf.withUnsafeMutableBytes { raw in
+                tex.getBytes(raw.baseAddress!, bytesPerRow: bpr,
+                             from: MTLRegionMake2D(0, r, cols, 1), mipmapLevel: 0)
+            }
+            for c in 0..<cols {
+                let p = c * 8
+                let h0 = Float(Float16(bitPattern: UInt16(buf[p]) | (UInt16(buf[p+1]) << 8)))
+                let h1 = Float(Float16(bitPattern: UInt16(buf[p+2]) | (UInt16(buf[p+3]) << 8)))
+                let h2 = Float(Float16(bitPattern: UInt16(buf[p+4]) | (UInt16(buf[p+5]) << 8)))
+                if h0.isFinite, h1.isFinite, h2.isFinite {
+                    acc += SIMD3<Float>(h0, h1, h2); n += 1
+                }
+            }
+        }
+        return n > 0 ? acc / n : averageSky
     }
 
     private func perspective(_ fovy: Float, _ aspect: Float, _ near: Float, _ far: Float) -> simd_float4x4 {
