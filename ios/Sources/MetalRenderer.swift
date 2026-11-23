@@ -650,14 +650,17 @@ final class MetalRenderer {
         width = w; height = h
         let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
         d.usage = [.renderTarget, .shaderRead]
+        d.storageMode = .shared
         sceneTex = device.makeTexture(descriptor: d)
         sceneTex2 = device.makeTexture(descriptor: d)
         let fd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
         fd.usage = [.renderTarget, .shaderRead]
+        fd.storageMode = .shared
         fogTex = device.makeTexture(descriptor: fd)
         fogOut = device.makeTexture(descriptor: fd)
         let ld = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
         ld.usage = [.renderTarget, .shaderRead]
+        ld.storageMode = .shared
         ldrTex = device.makeTexture(descriptor: ld)
         let ad = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
         ad.usage = .renderTarget
@@ -668,6 +671,24 @@ final class MetalRenderer {
     }
 
     func draw(in view: MTKView) {
+        var miss: [String] = []
+        if man == nil { miss.append("man") }
+        if vbuf == nil { miss.append("vbuf") }
+        if ibuf == nil { miss.append("ibuf") }
+        if waterVB == nil { miss.append("waterVB") }
+        if waterIB == nil { miss.append("waterIB") }
+        if view.currentDrawable == nil { miss.append("drawable") }
+        if meshPipe == nil { miss.append("meshPipe") }
+        if waterPipe == nil { miss.append("waterPipe") }
+        if depthState == nil { miss.append("depthState") }
+        if waterDepthState == nil { miss.append("waterDepthState") }
+        if sampler == nil { miss.append("sampler") }
+        if clampSampler == nil { miss.append("clampSampler") }
+        if fallbackTex == nil { miss.append("fallbackTex") }
+        if !miss.isEmpty {
+            if frameIdx == 0 { Boot.log("draw 缺资源: \(miss.joined(separator: ","))  drawableSize=\(Int(view.drawableSize.width))×\(Int(view.drawableSize.height)) paused=\(view.isPaused)") }
+            return
+        }
         guard let man, let vbuf, let ibuf, let waterVB, let waterIB, let drawable = view.currentDrawable,
               let meshPipe, let waterPipe, let depthState, let waterDepthState,
               let sampler, let clampSampler, let fallbackTex else { return }
@@ -713,6 +734,7 @@ final class MetalRenderer {
 
         guard let cb = queue.makeCommandBuffer() else { return }
 
+        if frameIdx == 0 { Boot.log("路径 terrain=\(terrain != nil) dome=\(dome != nil) skipDome=\(debugSkipSkyDome) ranges=\(man.ranges.count)") }
         // Pass 1：场景
         let rp = MTLRenderPassDescriptor()
         rp.colorAttachments[0].texture = sceneTex
@@ -1017,6 +1039,9 @@ final class MetalRenderer {
             if l > 0, l.isFinite { averageLum = l }
             if frameIdx <= 6 {
                 Boot.log("探针 f\(frameIdx) 地面75%: 地形=\(probeHalf(sceneTex, 0.5, 0.75)) 雾后=\(probeHalf(fogOut, 0.5, 0.75)) | 天空10%: 地形=\(probeHalf(sceneTex, 0.5, 0.1))")
+                Boot.log("帧体检 f\(frameIdx) cb=\(cb.status.rawValue) err=\(String(describing: cb.error)) 存储=\(sceneTex.storageMode.rawValue)/\(fogOut.storageMode.rawValue) 尺寸=\(sceneTex.width)×\(sceneTex.height)")
+                Boot.log("scene 亮度图 f\(frameIdx):\n\(probeGrid(sceneTex, 24, 10))")
+                Boot.log("雾后 亮度图 f\(frameIdx):\n\(probeGrid(fogOut, 24, 10))")
             }
         }
     }
@@ -1054,6 +1079,42 @@ final class MetalRenderer {
     }
 
     /// 32×32 天空目标求算术平均（等价于引擎对天空盒最粗 mip 取平均）
+
+    /// 把整张纹理按 cols×rows 采样成字符亮度图（. 全黑  · 极暗  1-9 递增  # 亮）
+    private func probeGrid(_ tex: MTLTexture?, _ cols: Int, _ rows: Int) -> String {
+        guard let tex else { return "nil" }
+        let w = tex.width, h = tex.height
+        var out = ""
+        var buf = [UInt8](repeating: 0, count: 8)
+        for r in 0..<rows {
+            var line = ""
+            for c in 0..<cols {
+                let x = min(w - 1, Int(Float(w) * (Float(c) + 0.5) / Float(cols)))
+                let y = min(h - 1, Int(Float(h) * (Float(r) + 0.5) / Float(rows)))
+                buf.withUnsafeMutableBytes { raw in
+                    tex.getBytes(raw.baseAddress!, bytesPerRow: 8,
+                                 from: MTLRegionMake2D(x, y, 1, 1), mipmapLevel: 0)
+                }
+                func half(_ i: Int) -> Float {
+                    Float(Float16(bitPattern: UInt16(buf[i]) | (UInt16(buf[i + 1]) << 8)))
+                }
+                let l = max(0, min(1, 0.2126 * half(0) + 0.7152 * half(2) + 0.0722 * half(4)))
+                if l < 0.0005 { line += "." }
+                else if l < 0.01 { line += "·" }
+                else if l < 0.05 { line += "1" }
+                else if l < 0.1 { line += "2" }
+                else if l < 0.2 { line += "3" }
+                else if l < 0.35 { line += "4" }
+                else if l < 0.5 { line += "5" }
+                else if l < 0.7 { line += "6" }
+                else if l < 0.9 { line += "7" }
+                else if l < 1.2 { line += "8" }
+                else { line += "#" }
+            }
+            out += line + "\n"
+        }
+        return out
+    }
 
     private func probeHalf(_ tex: MTLTexture?, _ fx: Float, _ fy: Float) -> String {
         guard let tex else { return "nil" }
