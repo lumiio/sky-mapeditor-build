@@ -21,11 +21,12 @@ struct DomeObjectUniforms {
 
 final class DomePass {
     private let device: MTLDevice
-    let pipeline: MTLRenderPipelineState?
-    private let depth: MTLDepthStencilState?
+    // 所有存储属性先给默认值，init 里再赋值；否则闭包会在初始化完成前捕获 self
+    private(set) var pipeline: MTLRenderPipelineState?
+    private var depth: MTLDepthStencilState?
     private var vpos: MTLBuffer?
     private var vnrm: MTLBuffer?
-    private var vcuv: MTLBuffer?     // color uchar4 @0 + uv0 half4 @4 + uv1 half4 @12（stride 20）
+    private var vcuv: MTLBuffer?     // color uchar4 @0 + uv0 float4 @4 + uv1 float4 @20（stride 36）
     private var ibuf: MTLBuffer?
     private var vc = 0
     private var ic = 0
@@ -33,7 +34,7 @@ final class DomePass {
     private var sampler: MTLSamplerState?
     /// 网格外接球半径（原版 UnitSphere.mesh 解出来是 1.0）
     private(set) var meshRadius: Float = 1.0
-    let available: Bool
+    private(set) var available = false
 
     init?(device: MTLDevice, assets: URL) {
         self.device = device
