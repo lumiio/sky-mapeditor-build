@@ -267,6 +267,13 @@ final class MetalRenderer {
     var az: Float = 2.10
     var el: Float = 0.28
     var zoom: Float = 1.0
+    /// 观察用曝光增益（编辑器 UI 滑杆），乘在 tonemap 的 exposure 上；默认 1
+    var exposureGain: Float = 1.0 {
+        didSet {
+            let base = envNum("exposure", 1)
+            Boot.log("曝光增益 gain=\(exposureGain) 基准=\(base) 有效=\(base * exposureGain) 平均亮度=\(averageLum)")
+        }
+    }
     var center = SIMD3<Float>(0, 0, 0)
     var radius: Float = 10
     var waterY: Float = -5
@@ -1039,7 +1046,7 @@ final class MetalRenderer {
                 var tu = TUni(bloomTint: envColor("bloomTint", SIMD3<Float>(1, 1, 1)),
                               bloomParams: SIMD4<Float>(envNum("bloomIntensity", 0), 0, 0, 0),
                               viewportSize: SIMD4<Float>(Float(w), Float(h), 1, 0),
-                              exposure: SIMD4<Float>(envNum("exposure", 1), 0, 0, 0))
+                              exposure: SIMD4<Float>(envNum("exposure", 1) * exposureGain, 0, 0, 0))
                 tenc.setRenderPipelineState(tonemapPipe)
                 tenc.setFragmentBytes(&tu, length: MemoryLayout<TUni>.stride, index: 1)
                 if frameIdx == 0 { Boot.log("调试：雾后处理旁路 debugSkipFogPost=\(debugSkipFogPost)（tonemap 直读 sceneTex2）") }

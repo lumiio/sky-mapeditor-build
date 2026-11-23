@@ -41,6 +41,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     private var view3d: MetalView!
     private var segmented: UISegmentedControl!
     private var info: UILabel!
+    private var expoSlider: UISlider!
+    private var expoLabel: UILabel!
     private let levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village", "Dawn_TrialsEarth", "Night_JarCave"]
     private let levels = ["烛窟", "蝶原", "草原村", "土试炼", "罐洞"]
 
@@ -70,6 +72,21 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         segmented.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .normal)
         view.addSubview(segmented)
 
+        expoSlider = UISlider()
+        expoSlider.minimumValue = -2          // 10^-2 = 0.01×
+        expoSlider.maximumValue = 2.5         // 10^2.5 ≈ 316×
+        expoSlider.value = 0                  // 10^0 = 1×
+        expoSlider.translatesAutoresizingMaskIntoConstraints = false
+        expoSlider.addTarget(self, action: #selector(onExposure), for: .valueChanged)
+        view.addSubview(expoSlider)
+
+        expoLabel = UILabel()
+        expoLabel.translatesAutoresizingMaskIntoConstraints = false
+        expoLabel.textColor = .white
+        expoLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        expoLabel.text = "曝光 ×1.00"
+        view.addSubview(expoLabel)
+
         info = UILabel()
         info.translatesAutoresizingMaskIntoConstraints = false
         info.textColor = .white
@@ -86,6 +103,11 @@ final class ViewerController: UIViewController, MTKViewDelegate {
             segmented.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             info.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 6),
             info.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            expoSlider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            expoSlider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            expoSlider.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -22),
+            expoLabel.leadingAnchor.constraint(equalTo: expoSlider.leadingAnchor),
+            expoLabel.bottomAnchor.constraint(equalTo: expoSlider.topAnchor, constant: -2),
         ])
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(onPinch(_:)))
@@ -108,6 +130,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
             info.text = "初始化失败（Metal 不可用）"
             return
         }
+        renderer?.exposureGain = Float(pow(10.0, Double(expoSlider.value)))
         if let err = renderer?.lastError {
             info.text = "加载失败：" + err
         } else {
@@ -121,6 +144,12 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
     @objc private func changeLevel() {
         load(level: levelIDs[max(0, segmented.selectedSegmentIndex)])
+    }
+
+    @objc private func onExposure() {
+        let gain = Float(pow(10.0, Double(expoSlider.value)))
+        expoLabel.text = String(format: "曝光 ×%.2f", gain)
+        renderer?.exposureGain = gain
     }
 
     @objc private func onPinch(_ g: UIPinchGestureRecognizer) {
