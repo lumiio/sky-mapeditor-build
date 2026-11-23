@@ -127,13 +127,14 @@ fragment float4 fs(VOut in [[stage_in]], constant U &u [[buffer(1)]],
 
   // ---- 顶点色四通道（原版 v_color）----
   float4 vc = in.color;
-  float emission = 2.0 * max(0.0, vc.z - 0.51);
+  float emissionRaw = 2.0 * max(0.0, vc.z - 0.51);
+  float emission = emissionRaw * emissionRaw;   // Mesh2243.frag:157
   float4 clr = float4(vc.xy, emission, min(1.0, vc.z * 2.0));
 
   // ---- 两张 diffuse 各用各的 uv ----
   float4 baseTex = diffuse1.sample(smp, in.uv01.xy * params.x) * diffuse2.sample(smp, in.uv23.zw);
   float3 baseColor = baseTex.rgb * diffuseColor.rgb;
-  float3 color15 = baseColor * clr.w;
+  float3 color15 = baseColor;   // 原版 color_15 = baseColor.xyz，不乘 v_color.w
 
   float4 lm = lightTex.sample(clampSmp, in.uv01.zw);
   float3 Ldir = -u.sunDir.xyz;
