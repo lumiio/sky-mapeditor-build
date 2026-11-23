@@ -66,6 +66,8 @@ jobs:
           for L in CandleSpace Prairie_ButterflyFields Prairie_Village Dawn_TrialsEarth Night_JarCave; do
             python3 qa/geo_preview.py native/Assets "$L" "/tmp/qa-$L.png"
           done
+      - name: Dome asset QA（原版穹顶网格/入口/视锥覆盖）
+        run: python3 qa/dome_check.py native/Assets
       - uses: actions/upload-artifact@v4
         if: always()
         with:

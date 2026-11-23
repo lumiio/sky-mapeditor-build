@@ -232,7 +232,8 @@ final class MetalRenderer {
     private var fogOut: MTLTexture?
     private var waterPipe: MTLRenderPipelineState?
     private var skyPipe: MTLRenderPipelineState?
-    private var domePipe: MTLRenderPipelineState?
+    private var dome: DomePass?
+    private var domeAuxTex: MTLTexture?   // 原版穹顶 fs 的第二路输出（o_fragColor1）
     private var depthState: MTLDepthStencilState?
     private var waterDepthState: MTLDepthStencilState?
     private var sampler: MTLSamplerState?
@@ -274,11 +275,9 @@ final class MetalRenderer {
     /// 原版 u_averageSkyColor：由引擎对天空盒做均值得到，这里用「把穹顶渲进 32×32 再读回求均值」复现
     var averageSky = SIMD3<Float>(0.05, 0.09, 0.16)
     private let debugSkipWater = true
-    /// 穹顶 pass 暂关：原版 SkyDomeFade 的 vs 是 5 路顶点输入（a_position/a_color/a_normal/a_uv0/a_uv1）+ u_model，
-    /// 要用包里的 UnitSphere.mesh；当前还没解出 .mesh 容器格式，硬画全屏三角形会因顶点缓冲未绑定让整个 command buffer 校验失败、
-    /// 连地形一起丢帧。先关掉，用 EnvNode 的原版 tintMidMid 当 u_averageSkyColor。
-    private let debugSkipSkyDome = true
-    private var skyAvgTex: MTLTexture?
+    /// 穹顶开关：DomePass 用原版 SkyDomeFade metallib + 原版 UnitSphere.mesh（半径 1.0）；
+    /// 管线或网格任一缺失时 DomePass 自身返回 nil，这里再兜一层，绝不发非法 draw（非法 draw 会让整个 command buffer 作废）
+    private let debugSkipSkyDome = false
     private var frameIdx = 0
 
     private var sceneTex: MTLTexture?
@@ -383,15 +382,11 @@ final class MetalRenderer {
         do {
             meshPipe = try dev.makeRenderPipelineState(descriptor: rpd)
             Boot.log("mesh 管线 ok")
-        let dpd = MTLRenderPipelineDescriptor()
-        dpd.vertexFunction = library.makeFunction(name: "domeVS")
-        dpd.fragmentFunction = library.makeFunction(name: "domeFadeFS")
-        dpd.colorAttachments[0].pixelFormat = .rgba16Float
-        do {
-            domePipe = try dev.makeRenderPipelineState(descriptor: dpd)
-            Boot.log("穹顶管线 ok")
-        } catch {
-            Boot.log("穹顶管线失败: \(error) domeVS=\(dpd.vertexFunction != nil) domeFadeFS=\(dpd.fragmentFunction != nil)")
+        if let root = assetsURL() {
+            dome = DomePass(device: dev, assets: root)
+            Boot.log("穹顶通道 \(dome != nil ? "可用" : "不可用")")
+        } else {
+            Boot.log("穹顶: Assets 目录缺失")
         }
             waterPipe = try dev.makeRenderPipelineState(descriptor: wrpd)
             Boot.log("water 管线 ok")
@@ -663,11 +658,9 @@ final class MetalRenderer {
         let ld = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
         ld.usage = [.renderTarget, .shaderRead]
         ldrTex = device.makeTexture(descriptor: ld)
-        if skyAvgTex == nil {
-            let sd0 = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 32, height: 32, mipmapped: false)
-            sd0.usage = [.renderTarget, .shaderRead]
-            skyAvgTex = device.makeTexture(descriptor: sd0)
-        }
+        let ad = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
+        ad.usage = .renderTarget
+        domeAuxTex = device.makeTexture(descriptor: ad)
         let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: w, height: h, mipmapped: false)
         dd.usage = [.renderTarget, .shaderRead]
         depthTex = device.makeTexture(descriptor: dd)
@@ -725,6 +718,10 @@ final class MetalRenderer {
         rp.colorAttachments[0].loadAction = .clear
         rp.colorAttachments[0].clearColor = MTLClearColor(red: 0.03, green: 0.05, blue: 0.09, alpha: 1)
         rp.colorAttachments[0].storeAction = .store
+        // 原版 SkyDomeFade fs 输出 o_fragColor0/o_fragColor1 两路，管线必须有第 2 个颜色附件
+        rp.colorAttachments[1].texture = domeAuxTex
+        rp.colorAttachments[1].loadAction = .dontCare
+        rp.colorAttachments[1].storeAction = .dontCare
         rp.depthAttachment.texture = depthTex
         rp.depthAttachment.loadAction = .clear
         rp.depthAttachment.storeAction = .store
@@ -753,61 +750,67 @@ final class MetalRenderer {
             enc.setFragmentTexture(posTex, index: 6)
             enc.setFragmentTexture(colTex, index: 7)
         }
-            // SkyDomeFade 穹顶：PerObject 块 = AmbienceSky 的色彩 + 引擎默认（数值见 docs/ir 的 IR）
-            var sky = PerObjectUniforms()
-            var skyF = PerFrameUniforms()
-            skyF.u_viewProjInv = mat4(simd_inverse(vp))
-            skyF.u_eyePos = t3(eye)
-            skyF.u_time = Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000))
-            skyF.u_sunDir = t3(sunDir)
-            skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
-            skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
-            // 地形片元用 mix(u_averageSkyColor, u_sunColor, a_light1.x) 作为环境光，之前这两个字段是 0 → 全场黑
-            if debugSkipSkyDome || averageSky.x + averageSky.y + averageSky.z <= 0 {
-                averageSky = SIMD3<Float>(avgSkyC.x, avgSkyC.y, avgSkyC.z)   // EnvNode 原版 tintMidMid
-            }
-            skyF.u_averageSkyColor = (averageSky.x, averageSky.y, averageSky.z)
-            skyF.u_averageSkyOcclusion = 1
-            skyF.u_averageSkyboxColor = (averageSky.x, averageSky.y, averageSky.z, 1)
-            skyF.u_averageProbeColor = (averageSky.x, averageSky.y, averageSky.z, 1)
-            var skyP = PerPassUniforms()
-            skyP.u_viewportSize = (Float(w), Float(h), 1 / Float(w), 1 / Float(h))
-            if let domePipe, !debugSkipSkyDome {
-                sky = PerObjectUniforms()
-                sky.u_skyColor = t3p(envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)))
-                sky.u_horizonColor = t3(envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)))
-                sky.u_horizonFalloff = envNum("horizonFalloff", 0)
-                sky.u_skyBrightness = envNum("skyBrightness", 1)
-                sky.u_useEnvSun = 1
-                sky.u_sunAngles = (envNum("sunAngleXZ", 180), envNum("sunAngleY", 40))
-                sky.u_sunSize = envNum("sunSize", 0)
-                sky.u_sunInt = envNum("sunInt", 1)
-                sky.u_sunTint = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
-                sky.u_sunGlow = envNum("sunGlow", 0)
-                sky.u_highCloudSpeed = (0, 0)
-                sky.u_highCloudHeight = envNum("highCloudHeight", 0)
-                sky.u_highCloudSize = envNum("highCloudSize", 0)
-                sky.u_highCloudDensity = envNum("highCloudDensity", 0)
-                sky.u_highCloudOpacity = envNum("highCloudOpacity", 0)
-                sky.u_lowCloudSpeed = (0, 0)
-                sky.u_lowCloudHeight = envNum("lowCloudHeight", 0)
-                sky.u_lowCloudSize = envNum("lowCloudSize", 0)
-                sky.u_lowCloudDensity = envNum("lowCloudDensity", 0)
-                sky.u_lowCloudOpacity = envNum("lowCloudOpacity", 0)
-                sky.u_cloudColor = t3(envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)))
-                sky.u_cloudAbsorption = envNum("cloudAbsorption", 0)
-                sky.u_cloudPatchiness = envNum("cloudPatchiness", 0)
-                sky.u_skyFadeOut = envNum("skyFadeOut", 1)   // EnvNode 无此字段；0 = 整块穹顶被淡出成黑（上一版把天空和均值都杀成 0）
+        // 原版 PerFrame：地形/穹顶/簇光共用同一块 1584 B
+        averageSky = SIMD3<Float>(avgSkyC.x, avgSkyC.y, avgSkyC.z)   // EnvNode 原版 tintMidMid（原版均值由引擎天空盒积分给出）
+        var skyF = PerFrameUniforms()
+        skyF.u_eyePos = t3(eye)
+        skyF.u_time = Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000))
+        skyF.u_sunDir = t3(sunDir)
+        skyF.u_sunSizeIntMoonPhase = (envNum("sunSize", 0), envNum("sunInt", 1), 0, 0)
+        skyF.u_sunColor = t3(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
+        skyF.u_averageSkyColor = (averageSky.x, averageSky.y, averageSky.z)
+        skyF.u_averageSkyOcclusion = 1
+        skyF.u_averageSkyboxColor = (averageSky.x, averageSky.y, averageSky.z, 1)
+        skyF.u_averageProbeColor = (averageSky.x, averageSky.y, averageSky.z, 1)
 
-            enc.setRenderPipelineState(domePipe)
-            enc.setFragmentBytes(&sky, length: MemoryLayout<PerObjectUniforms>.stride, index: 2)
-            enc.setFragmentBytes(&skyF, length: MemoryLayout<PerFrameUniforms>.stride, index: 3)
-            enc.setFragmentBytes(&skyP, length: MemoryLayout<PerPassUniforms>.stride, index: 4)
-            // 全屏大三角形：原版穹顶片元只用 [[position]]，不需要任何几何体
-            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-            enc.setRenderPipelineState(meshPipe)
+        // 原版 SkyDomeFade 穹顶（vsmain/fsmain 直接来自游戏包 metallib，几何用原版 UnitSphere.mesh）
+        var sky = PerObjectUniforms()
+        var skyP = PerPassUniforms()
+        skyP.u_viewportSize = (Float(w), Float(h), 1 / Float(w), 1 / Float(h))
+        skyF.u_view = mat4(viewM)
+        skyF.u_proj = mat4(proj)
+        skyF.u_viewProj = mat4(vp)
+        skyF.u_viewProjInv = mat4(simd_inverse(vp))
+        // EnvNode 的 26 个字段（TGCL 原值），缺字段时保留引擎构造默认
+        sky.u_skyColor = envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017))
+        sky.u_horizonColor = SIMD3<Float>(envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)).x,
+                                          envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)).y,
+                                          envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)).z)
+        sky.u_horizonFalloff = envNum("horizonFalloff", 0)
+        sky.u_skyBrightness = envNum("skyBrightness", 1)
+        sky.u_useEnvSun = 1
+        sky.u_sunAngles = (envNum("sunAngleXZ", 180), envNum("sunAngleY", 40))
+        sky.u_sunSize = envNum("sunSize", 0)
+        sky.u_sunInt = envNum("sunInt", 1)
+        sky.u_sunTint = SIMD3<Float>(envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)).x,
+                                     envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)).y,
+                                     envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)).z)
+        sky.u_sunGlow = envNum("sunGlow", 0)
+        sky.u_highCloudSpeed = (envNum("highCloudSpeedX", 0), envNum("highCloudSpeedY", 0))
+        sky.u_highCloudHeight = envNum("highCloudHeight", 0)
+        sky.u_highCloudSize = envNum("highCloudSize", 0)
+        sky.u_highCloudDensity = envNum("highCloudDensity", 0)
+        sky.u_highCloudOpacity = envNum("highCloudOpacity", 0)
+        sky.u_lowCloudSpeed = (envNum("lowCloudSpeedX", 0), envNum("lowCloudSpeedY", 0))
+        sky.u_lowCloudHeight = envNum("lowCloudHeight", 0)
+        sky.u_lowCloudSize = envNum("lowCloudSize", 0)
+        sky.u_lowCloudDensity = envNum("lowCloudDensity", 0)
+        sky.u_lowCloudOpacity = envNum("lowCloudOpacity", 0)
+        sky.u_cloudColor = SIMD3<Float>(envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)).x,
+                                        envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)).y,
+                                        envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)).z)
+        sky.u_cloudAbsorption = envNum("cloudAbsorption", 0)
+        sky.u_cloudPatchiness = envNum("cloudPatchiness", 0)
+        sky.u_skyFadeOut = 1     // 1 = 正常显示（0 会把整块穹顶淡成黑）
+        if let dome, !debugSkipSkyDome {
+            dome.setProbeColor(SIMD3<Float>(averageSky.x, averageSky.y, averageSky.z))
+            dome.encode(enc, eye: eye, radiusScale: farD * 0.9,
+                        perObject: &sky, perFrame: &skyF, perPass: &skyP)
+            enc.setRenderPipelineState(meshPipe)     // 恢复主 mesh 管线给地形用
         }
+
         // 原版地形片元读取的 PerFrame 字段：u_camMat@480 / u_lightShadowConsts@560 / u_eyePos@608 / u_sunDir@880 / u_sunColor@912 / u_pointLight@1184
+        Boot.log("结构体尺寸 PerFrame=\(MemoryLayout<PerFrameUniforms>.stride) PerObject=\(MemoryLayout<PerObjectUniforms>.stride) DomeObj=\(MemoryLayout<DomeObjectUniforms>.stride) PerPass=\(MemoryLayout<PerPassUniforms>.stride)")
         Boot.log("PerFrame 偏移 camMat=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_camMat) ?? -1) eyePos=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_eyePos) ?? -1) sunDir=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunDir) ?? -1) sunColor=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_sunColor) ?? -1) pointLight=\(MemoryLayout<PerFrameUniforms>.offset(of: \.u_pointLight) ?? -1) size=\(MemoryLayout<PerFrameUniforms>.stride)")
         if let terrain {
             var pf = skyF
@@ -844,26 +847,7 @@ final class MetalRenderer {
         }
         enc.endEncoding()
 
-        // 天空均值：把同一个穹顶管路渲进 32×32，读回做算术平均（每 30 帧一次）
         frameIdx += 1
-        let doSkyAvg = (frameIdx % 30 == 1)
-        if doSkyAvg, let domePipe, let skyAvgTex, !debugSkipSkyDome {
-            let rp2 = MTLRenderPassDescriptor()
-            rp2.colorAttachments[0].texture = skyAvgTex
-            rp2.colorAttachments[0].loadAction = .clear
-            rp2.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-            rp2.colorAttachments[0].storeAction = .store
-            if let e2 = cb.makeRenderCommandEncoder(descriptor: rp2) {
-                e2.setRenderPipelineState(domePipe)
-                e2.setFragmentBytes(&sky, length: MemoryLayout<PerObjectUniforms>.stride, index: 2)
-                e2.setFragmentBytes(&skyF, length: MemoryLayout<PerFrameUniforms>.stride, index: 3)
-                var p2 = skyP
-                p2.u_viewportSize = (32, 32, 1.0 / 32, 1.0 / 32)
-                e2.setFragmentBytes(&p2, length: MemoryLayout<PerPassUniforms>.stride, index: 4)
-                e2.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-                e2.endEncoding()
-            }
-        }
 
         // 场景色拷到第二张目标
         if let blit = cb.makeBlitCommandEncoder() {
@@ -1004,10 +988,6 @@ final class MetalRenderer {
         cb.present(drawable)
         cb.commit()
         // 原版视线自适应：用上一帧 FogUpsample 输出的几何平均亮度做 u_averageLum
-        if doSkyAvg, let skyAvgTex, !debugSkipSkyDome {
-            cb.waitUntilCompleted()
-            averageSky = averageSkyColor(of: skyAvgTex)
-        }
         if let fogOut {
             cb.waitUntilCompleted()
             let l = averageLuminance(of: fogOut)
@@ -1067,34 +1047,6 @@ final class MetalRenderer {
         return String(format: "(%.3f, %.3f, %.3f, %.3f)", half(0), half(2), half(4), half(6))
     }
 
-    private func averageSkyColor(of tex: MTLTexture) -> SIMD3<Float> {
-        let cols = tex.width, rows = tex.height
-        let bpr = cols * 8
-        var buf = [UInt8](repeating: 0, count: bpr)
-        var acc = SIMD3<Float>(0, 0, 0); var n: Float = 0
-        for r in 0..<rows {
-            buf.withUnsafeMutableBytes { raw in
-                tex.getBytes(raw.baseAddress!, bytesPerRow: bpr,
-                             from: MTLRegionMake2D(0, r, cols, 1), mipmapLevel: 0)
-            }
-            for c in 0..<cols {
-                let p = c * 8
-                let h0 = Float(Float16(bitPattern: UInt16(buf[p]) | (UInt16(buf[p+1]) << 8)))
-                let h1 = Float(Float16(bitPattern: UInt16(buf[p+2]) | (UInt16(buf[p+3]) << 8)))
-                let h2 = Float(Float16(bitPattern: UInt16(buf[p+4]) | (UInt16(buf[p+5]) << 8)))
-                if h0.isFinite, h1.isFinite, h2.isFinite {
-                    acc += SIMD3<Float>(h0, h1, h2); n += 1
-                }
-            }
-        }
-        let avg = n > 0 ? acc / n : averageSky
-        if skyAvgLogCount < 3 {
-            skyAvgLogCount += 1
-            Boot.log("天空均值[第\(skyAvgLogCount)次] = (\(avg.x), \(avg.y), \(avg.z)) 有效像素 \(n)")
-        }
-        return avg
-    }
-    private var skyAvgLogCount = 0
 
     private func perspective(_ fovy: Float, _ aspect: Float, _ near: Float, _ far: Float) -> simd_float4x4 {
         let y = 1 / tan(fovy / 2), x = y / aspect
