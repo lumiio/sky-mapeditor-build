@@ -65,6 +65,9 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         view3d.delegate = self
         view3d.isMultipleTouchEnabled = true
         view3d.preferredFramesPerSecond = 60
+        // 3× 屏下 drawable 是 1320×2868，一帧十几张全屏贴图 ≈300MB，切关卡时新旧渲染器叠加会被系统 jetsam 杀掉。
+        // 编辑器不需要 3× 精度，封顶 2×（880×1912），内存直接降 55%。
+        view3d.contentScaleFactor = min(UIScreen.main.scale, 2.0)
         view.addSubview(view3d)
 
         segmented = UISegmentedControl(items: levels)
@@ -151,17 +154,48 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         let prevLog = Boot.tail(30)
         Boot.reset()
         load(level: levelIDs[0])
-        if !prevLog.isEmpty && !prevLog.contains("first frame"),
-           let last = prevLog.split(separator: "\n").last {
-            info.text = "上次断在：" + String(last)
+        if !prevLog.isEmpty && !prevLog.contains("first frame") {
+            let lines = prevLog.split(separator: "\n").suffix(2).map { String($0).prefix(60) }
+            info.text = "上次断在：" + lines.joined(separator: " ← ")
         }
     }
 
+    /// 当前进程占用（phys_footprint），切关卡时打点，便于判断是不是被内存杀掉
+    private func memMB() -> Int {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return kr == KERN_SUCCESS ? Int(info.phys_footprint / 1_048_576) : -1
+    }
+
     private func load(level: String) {
-        renderer = MetalRenderer(level: level)
-        view3d.renderer = renderer
-        if renderer == nil {
-            info.text = "初始化失败（Metal 不可用）"
+        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else {
+            info.text = "Assets 资源目录缺失"; return
+        }
+        let bin = root.appendingPathComponent("\(level).terrain.bin")
+        guard FileManager.default.fileExists(atPath: bin.path) else {
+            info.text = "\(level) 的地形数据不在这版包里"
+            Boot.log("切换被拦：缺 \(level).terrain.bin")
+            return
+        }
+        // 先把旧渲染器彻底放掉再建新的：两份同时在线时显存会翻倍，切关卡闪退多半死在这里
+        Boot.log("UI 切换 → \(level) 内存=\(memMB())MB")
+        view3d.isPaused = true
+        view3d.renderer = nil
+        renderer = nil
+        Boot.log("UI 旧渲染器已释放 内存=\(memMB())MB")
+        var nr: MetalRenderer?
+        autoreleasepool { nr = MetalRenderer(level: level) }
+        Boot.log("UI 新建完成 \(level) ok=\(nr != nil) 内存=\(memMB())MB drawable=\(Int(view3d.drawableSize.width))×\(Int(view3d.drawableSize.height))")
+        renderer = nr
+        view3d.renderer = nr
+        view3d.isPaused = false
+        if nr == nil {
+            info.text = "初始化失败（Metal 不可用或数据缺失）"
             return
         }
         renderer?.exposureGain = Float(pow(10.0, Double(expoSlider.value)))
@@ -170,6 +204,9 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         } else {
             webLog(level)
         }
+        // 换关后按钮标题要跟新渲染器的状态对齐，不然会显示反的
+        btnFog.setTitle(renderer?.debugSkipFogPost == true ? "雾：关" : "雾：开", for: .normal)
+        btnDome.setTitle(renderer?.debugSkipSkyDome == true ? "穹顶：关" : "穹顶：开", for: .normal)
     }
 
     private func webLog(_ s: String) {
@@ -177,7 +214,9 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     }
 
     @objc private func changeLevel() {
-        load(level: levelIDs[max(0, segmented.selectedSegmentIndex)])
+        let i = segmented.selectedSegmentIndex
+        guard i >= 0, i < levelIDs.count else { return }
+        load(level: levelIDs[i])
     }
 
     @objc private func onReset() {
