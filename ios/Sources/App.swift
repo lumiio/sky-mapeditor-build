@@ -204,7 +204,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         guard let r = renderer else { return }
         let t = g.translation(in: view3d)
         r.targetShift.x -= Float(t.x) * 0.02
-        r.targetShift.z -= Float(t.y) * 0.02
+        r.targetShift.y -= Float(t.y) * 0.02
         g.setTranslation(.zero, in: view3d)
     }
 
