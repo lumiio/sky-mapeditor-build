@@ -83,10 +83,12 @@ final class TerrainPass {
         FAMILIES.first { $0.shader == shader }?.defaultRough ?? 1
     }
 
-    init?(device: MTLDevice) {
+    let level: String
+    init?(device: MTLDevice, level: String) {
         self.device = device
+        self.level = level
         guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else { return nil }
-        guard let data = try? Data(contentsOf: root.appendingPathComponent("CandleSpace.terrain.bin")),
+        guard let data = try? Data(contentsOf: root.appendingPathComponent(level + ".terrain.bin")),
               data.count > 8 else { Boot.log("地形 bin 缺失"); return nil }
         let vc = data.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) }
         let ic = data.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt32.self) }
@@ -98,7 +100,7 @@ final class TerrainPass {
         ibuf = data.subdata(in: (8 + vbytes)..<(8 + vbytes + ibytes)).withUnsafeBytes {
             device.makeBuffer(bytes: $0.baseAddress!, length: ibytes, options: .storageModeShared)
         }
-        if let md = try? Data(contentsOf: root.appendingPathComponent("CandleSpace.terrain.meta.json")),
+        if let md = try? Data(contentsOf: root.appendingPathComponent(level + ".terrain.meta.json")),
            let m = try? JSONDecoder().decode(TerrainMeta.self, from: md) {
             meta = m
             for r in m.ranges { groups["\(r.shader)/\(r.material)", default: []].append(r) }

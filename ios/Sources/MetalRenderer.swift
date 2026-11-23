@@ -308,7 +308,7 @@ final class MetalRenderer {
               let wvs = library.makeFunction(name: "waterVS"), let wfs = library.makeFunction(name: "waterFS")
         else { Boot.log("shader 函数缺失"); return nil }
         Boot.log("shader 函数就绪")
-        terrain = TerrainPass(device: device)
+        terrain = TerrainPass(device: device, level: level)
 
         let vd = MTLVertexDescriptor()
         // 原版顶点：pos | nrm | a_color | a_uv0(vec4) | a_uv1(vec4) | light0 | light1 | light2 = 72 B
