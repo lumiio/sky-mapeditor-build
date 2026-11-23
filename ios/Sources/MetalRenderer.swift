@@ -4,6 +4,58 @@ import MetalKit
 import UIKit
 import simd
 
+
+/// SkyDomeFade 的 per-object 块（25 字段，字段顺序与 MSL 里的 SkyU 一一对应）
+struct SkyU {
+    var skyColor: simd_float4
+    var horizonColor: simd_float4
+    var horizonFalloff: Float
+    var skyBrightness: Float
+    var useEnvSun: Float
+    var pad0: Float
+    var sunAngles: simd_float4
+    var sunSize: Float
+    var sunInt: Float
+    var pad1: Float
+    var pad2: Float
+    var sunTint: simd_float4
+    var sunGlow: Float
+    var pad3: Float
+    var pad4: Float
+    var pad5: Float
+    var highCloudSpeed: simd_float4
+    var highCloudHeight: Float
+    var highCloudSize: Float
+    var highCloudDensity: Float
+    var highCloudOpacity: Float
+    var lowCloudSpeed: simd_float4
+    var lowCloudHeight: Float
+    var lowCloudSize: Float
+    var lowCloudDensity: Float
+    var lowCloudOpacity: Float
+    var cloudColor: simd_float4
+    var cloudAbsorption: Float
+    var cloudPatchiness: Float
+    var skyFadeOut: Float
+    var pad6: Float
+}
+
+struct SkyFrame {
+    var viewProjInv: simd_float4x4
+    var eyePos: simd_float4
+    var time: Float
+    var padA: Float
+    var padB: Float
+    var padC: Float
+    var sunDir: simd_float4
+    var sunSizeIntMoonPhase: simd_float4
+    var atmoSunColor: simd_float4
+}
+
+struct SkyPass {
+    var viewportSize: simd_float4
+}
+
 struct Uniforms {
     var viewProj: simd_float4x4
     var eyePos: simd_float4
@@ -223,7 +275,7 @@ final class MetalRenderer {
         skyPipe = try? dev.makeRenderPipelineState(descriptor: skp)
         let dpd = MTLRenderPipelineDescriptor()
         dpd.vertexFunction = library.makeFunction(name: "domeVS")
-        dpd.fragmentFunction = library.makeFunction(name: "domeFS")
+        dpd.fragmentFunction = library.makeFunction(name: "domeFadeFS")
         dpd.vertexDescriptor = vd
         dpd.colorAttachments[0].pixelFormat = .rgba16Float
         domePipe = try? dev.makeRenderPipelineState(descriptor: dpd)
@@ -579,12 +631,50 @@ final class MetalRenderer {
             enc.setFragmentTexture(posTex, index: 6)
             enc.setFragmentTexture(colTex, index: 7)
         }
-        // SkyDomeFade 穹顶：原版那一关的 Plane 段（6 索引）走穹顶管线，采 u_probeCube
-        if let domePipe, let probeCube {
+        // SkyDomeFade 穹顶：PerObject 块 = AmbienceSky 的色彩 + 引擎默认（数值见 docs/ir 的 IR）
+        if let domePipe {
+            var sky = SkyU(skyColor: envColor("tintTop", SIMD3<Float>(0, 0.0009, 0.017)),
+                           horizonColor: envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0)),
+                           horizonFalloff: envNum("horizonFalloff", 0),
+                           skyBrightness: envNum("skyBrightness", 1),
+                           useEnvSun: 1,
+                           pad0: 0,
+                           sunAngles: SIMD4<Float>(envNum("sunAngleXZ", 180),
+                                                   envNum("sunAngleY", 40), 0, 0),
+                           sunSize: envNum("sunSize", 0),
+                           sunInt: envNum("sunInt", 1),
+                           pad1: 0, pad2: 0,
+                           sunTint: envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)),
+                           sunGlow: envNum("sunGlow", 0),
+                           pad3: 0, pad4: 0, pad5: 0,
+                           highCloudSpeed: SIMD4<Float>(0, 0, 0, 0),
+                           highCloudHeight: envNum("highCloudHeight", 0),
+                           highCloudSize: envNum("highCloudSize", 0),
+                           highCloudDensity: envNum("highCloudDensity", 0),
+                           highCloudOpacity: envNum("highCloudOpacity", 0),
+                           lowCloudSpeed: SIMD4<Float>(0, 0, 0, 0),
+                           lowCloudHeight: envNum("lowCloudHeight", 0),
+                           lowCloudSize: envNum("lowCloudSize", 0),
+                           lowCloudDensity: envNum("lowCloudDensity", 0),
+                           lowCloudOpacity: envNum("lowCloudOpacity", 0),
+                           cloudColor: envColor("cloudColor", SIMD3<Float>(0.14, 0.15, 0.17)),
+                           cloudAbsorption: envNum("cloudAbsorption", 0),
+                           cloudPatchiness: envNum("cloudPatchiness", 0),
+                           skyFadeOut: envNum("skyFadeOut", 0),
+                           pad6: 0)
+            var skyF = SkyFrame(viewProjInv: simd_inverse(vp),
+                                eyePos: SIMD4<Float>(eye, 1),
+                                time: Float(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000)),
+                                padA: 0, padB: 0, padC: 0,
+                                sunDir: SIMD4<Float>(sunDir, 0),
+                                sunSizeIntMoonPhase: SIMD4<Float>(envNum("sunSize", 0), envNum("sunInt", 1), 0, 0),
+                                atmoSunColor: envColor("sunColor", SIMD3<Float>(0.0433, 0.0335, 0.0293)))
+            var skyP = SkyPass(viewportSize: SIMD4<Float>(Float(w), Float(h), 1 / Float(w), 1 / Float(h)))
             for r in man.ranges where r.name.lowercased() == "plane" {
                 enc.setRenderPipelineState(domePipe)
-                enc.setFragmentTexture(probeCube, index: 0)
-                enc.setFragmentSamplerState(clampSampler, index: 0)
+                enc.setFragmentBytes(&sky, length: MemoryLayout<SkyU>.stride, index: 2)
+                enc.setFragmentBytes(&skyF, length: MemoryLayout<SkyFrame>.stride, index: 3)
+                enc.setFragmentBytes(&skyP, length: MemoryLayout<SkyPass>.stride, index: 4)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                           indexBuffer: ibuf, indexBufferOffset: r.start * 4)
             }
