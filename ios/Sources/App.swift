@@ -263,7 +263,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         scrim.alpha = 0
         scrim.isHidden = true
         scrim.translatesAutoresizingMaskIntoConstraints = false
-        scrim.addTarget(self, action: #selector(closePanels), for: .touchUpInside)
+        scrim.addTarget(self, action: #selector(onScrim), for: .touchUpInside)
         view.addSubview(scrim)
         NSLayoutConstraint.activate([
             scrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -627,6 +627,11 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
             self.rightPanel.transform = .identity
         }
+    }
+
+    @objc private func onScrim() {
+        if sheetShown { hideLevelSheet() }
+        closePanels()
     }
 
     @objc private func closePanels() {
