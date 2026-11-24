@@ -65,6 +65,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     private var swCloud: UISwitch!
     private var swDome: UISwitch!
     private var swFP: UISwitch!
+    private var swObj: UISwitch!
     private var expoSlider: UISlider!
     private var expoLabel: UILabel!
     private var sheetShown = false
@@ -244,6 +245,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         swCloud = makeSwitch(#selector(onSwitchCloud))
         swDome = makeSwitch(#selector(onSwitchDome))
         swFP = makeSwitch(#selector(onSwitchFP))
+        swObj = makeSwitch(#selector(onSwitchObj))
 
         var rowsV: [UIView] = [levelTitle, levelGrid, hairline(), makeRow("雾", swFog),
                        makeRow("云（原版体积云）", swCloud), makeRow("天空穹顶", swDome),
@@ -387,6 +389,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         swDome.setOn(!r.debugSkipSkyDome, animated: false)
         swCloud.setOn(!r.hideCloud, animated: false)
         swFP.setOn(r.firstPerson, animated: false)
+        swObj.setOn(r.showObjects, animated: false)
     }
 
     /// 当前进程占用，切关时打点，用来判断是不是被内存杀掉
@@ -452,7 +455,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                     text += " · 上次断在 " + self.pendingPrevLog
                     self.pendingPrevLog = ""
                 }
-                self.hud.text = "v10 · " + text
+                self.hud.text = "v11 · " + text
                 self.refreshToggles()
                 self.syncTitle()
             }
@@ -483,6 +486,10 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
     @objc private func onSwitchCloud(_ sw: UISwitch) {
         renderer?.hideCloud = !sw.isOn
+    }
+
+    @objc private func onSwitchObj(_ sw: UISwitch) {
+        renderer?.showObjects = sw.isOn
     }
 
     @objc private func onSwitchFP(_ sw: UISwitch) {

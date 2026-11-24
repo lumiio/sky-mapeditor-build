@@ -262,6 +262,8 @@ final class MetalRenderer {
     private var objVB: MTLBuffer?
     private var objIB: MTLBuffer?
     private var objRanges: [RangeDesc] = []
+    /// 道具默认关：先把白块来源隔离出来（地形/穹顶/道具三路）
+    var showObjects = false
     private var beamoVB: MTLBuffer?
     private var beamoIB: MTLBuffer?
     private var ibuf: MTLBuffer?
@@ -751,6 +753,8 @@ final class MetalRenderer {
         let h = view.drawableSize.height > 0 ? Int(view.drawableSize.height) : 1
         ensureTargets(w, h)
         guard let sceneTex, let sceneTex2, let depthTex else { return }
+        // 雾这一路输出恒为白，旁路时连纹理都不留，保证探针/tonemap 读的是场景本身
+        if debugSkipFogPost { fogOut = nil }
 
         // 摄像机：默认「第一人称 / 地面视角」——站在关卡的可玩区域里平视，
         // 和游戏里进去看到的一样；俯瞰模式保留旧的绕轨道相机（做成俯视沙盘）。
@@ -994,7 +998,7 @@ final class MetalRenderer {
         }
         }
         // LevelMesh 道具：与原版 Mesh 顶点同布局（72 B），走同一条原版 Mesh 管线
-        if let objVB, let objIB, !objRanges.isEmpty {
+        if showObjects, let objVB, let objIB, !objRanges.isEmpty {
             enc.setRenderPipelineState(meshPipe)
             enc.setDepthStencilState(depthState)
             enc.setVertexBuffer(objVB, offset: 0, index: 0)
