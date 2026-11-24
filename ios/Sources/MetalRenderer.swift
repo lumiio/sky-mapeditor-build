@@ -882,7 +882,8 @@ final class MetalRenderer {
         ld.storageMode = .shared
         ldrTex = device.makeTexture(descriptor: ld)
         let ad = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h, mipmapped: false)
-        ad.usage = .renderTarget
+        ad.usage = [.renderTarget, .shaderRead]
+        ad.storageMode = .private
         domeAuxTex = device.makeTexture(descriptor: ad)
         let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: w, height: h, mipmapped: false)
         dd.usage = [.renderTarget, .shaderRead]
