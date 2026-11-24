@@ -119,6 +119,11 @@ jobs:
           xcrun simctl install "$UDID" ios/build-sim/Build/Products/Release-iphonesimulator/SkyMapEditor.app
           xcrun simctl launch "$UDID" com.skyeditor.metal
           sleep 25
+          echo "---- 进程存活检查 ----"
+          xcrun simctl spawn "$UDID" launchctl list | grep -i skyeditor || echo "APP_NOT_RUNNING"
+          echo "---- 崩溃报告 ----"
+          ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | head -5 || true
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*SkyMapEditor* 2>/dev/null | head -2); do echo "== $f"; head -120 "$f"; done
           xcrun simctl io "$UDID" screenshot /tmp/qa-shot.png
           ls -l /tmp/qa-shot.png
 
@@ -141,3 +146,4 @@ jobs:
           path: |
             /tmp/qa-shot.png
             /tmp/qa-boot.log
+            ~/Library/Logs/DiagnosticReports/*SkyMapEditor*
