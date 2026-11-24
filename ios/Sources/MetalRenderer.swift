@@ -625,6 +625,7 @@ final class MetalRenderer {
            let o = try? JSONSerialization.jsonObject(with: gj) as? [String: Any],
            let sp = o["spawn"] as? [Double], sp.count >= 3 {
             center.x = Float(sp[0]); center.z = Float(sp[2]); geoEyeBase = Float(sp[1])
+            az = 0; el = 0.05
         }
 
         // Beamo 体积网格（FogVolume 用的遮挡体）
