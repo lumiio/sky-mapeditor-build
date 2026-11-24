@@ -252,12 +252,12 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         expoLabel = UILabel()
         expoLabel.textColor = UIColor(white: 1, alpha: 0.45)
         expoLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        expoLabel.text = "曝光 ×7.59"
+        expoLabel.text = "曝光 ×1.00"
 
         expoSlider = UISlider()
         expoSlider.minimumValue = -2
         expoSlider.maximumValue = 2.5
-        expoSlider.value = 0.88
+        expoSlider.value = 0.0
         expoSlider.minimumTrackTintColor = accent
         expoSlider.maximumTrackTintColor = UIColor(white: 1, alpha: 0.12)
         expoSlider.thumbTintColor = .white
@@ -452,7 +452,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                     text += " · 上次断在 " + self.pendingPrevLog
                     self.pendingPrevLog = ""
                 }
-                self.hud.text = "v8 · " + text
+                self.hud.text = "v10 · " + text
                 self.refreshToggles()
                 self.syncTitle()
             }
@@ -469,8 +469,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         guard let r = renderer else { return }
         r.az = 2.10; r.el = r.firstPerson ? 0 : 0.28; r.zoom = 1.0; r.targetShift = SIMD2<Float>(0, 0)
         r.exposureGain = 1.0
-        expoSlider.value = 0.88          // 10^0.88 ≈ 7.6×，烛窟平均亮度 0.018 的可用档位
-        expoLabel.text = "曝光 ×7.59"
+        expoSlider.value = 0.0          // 10^0.88 ≈ 7.6×，烛窟平均亮度 0.018 的可用档位
+        expoLabel.text = "曝光 ×1.00"
     }
 
     @objc private func onSwitchFog(_ sw: UISwitch) {

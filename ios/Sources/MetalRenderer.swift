@@ -303,7 +303,7 @@ final class MetalRenderer {
     var debugSkipSkyDome = false
     /// 诊断开关：真机雾管线输出恒为「1.0」(=亮度 0)，会把整帧乘黑；先让 tonemap 直读场景色，
     /// 用亮度图确认场景本身有没有内容，再回来修雾。仅诊断期打开，日志会写明。
-    var debugSkipFogPost = false
+    var debugSkipFogPost = true   // 雾合成现在输出整屏白（fogVolumeIntensity=-0.7），先默认旁路；开关可开
     private var frameIdx = 0
 
     private var sceneTex: MTLTexture?
@@ -902,7 +902,7 @@ final class MetalRenderer {
         sky.u_skyColor = (tintTopV.x, tintTopV.y, tintTopV.z, 1)
         let tintBotV = envColor("tintBot", SIMD3<Float>(0.1726, 0.0005, 0))
         sky.u_horizonColor = (tintBotV.x, tintBotV.y, tintBotV.z)
-        sky.u_horizonFalloff = envNum("horizonFalloff", 0)
+        sky.u_horizonFalloff = envNum("horizonFalloff", envNum("falloff", 0))  // 烛窟 env 里叫 falloff=20，之前读不到 → 0 → 整片天变成 tintBot 红
         sky.u_skyBrightness = envNum("skyBrightness", 1)
         sky.u_useEnvSun = 1
         sky.u_sunAngles = (envNum("sunAngleXZ", 180), envNum("sunAngleY", 40))
