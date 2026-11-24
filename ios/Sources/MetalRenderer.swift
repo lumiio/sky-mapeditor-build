@@ -1295,6 +1295,9 @@ final class MetalRenderer {
             pf.u_view = mat4(viewM)
             pf.u_proj = mat4(proj)
             pf.u_viewProj = mat4(vp)
+            pf.u_viewProjInv = mat4(simd_inverse(vp))
+            pf.u_viewProjCull = mat4(vp)
+            pf.u_viewProjOld = mat4(vp)
             pf.u_camMat = mat4(viewM)
             pf.u_lightShadowConsts = (0.01, 0.01, 0.01, 0.01) // 引擎构造函数里直接存 0x3c23d70a=0.01 到 4 个分量
             pf.u_pointLight = (plC.x * plK, plC.y * plK, plC.z * plK, 0)
