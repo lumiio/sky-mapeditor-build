@@ -942,7 +942,12 @@ final class MetalRenderer {
             terrain.hideCloud = hideCloud
             terrain.encode(enc, perFrame: &pf, perPass: SIMD4<Float>(skyP.u_viewportSize.0, skyP.u_viewportSize.1, 1 / Float(w), 1 / Float(h)))
             enc.setRenderPipelineState(meshPipe)
-        } else if let vbuf, let ibuf {
+        }
+        // 关卡里另一套静态网格（编辑器导出的 .verts/.idx，含篝火/火把/烛台/岩石等道具）。
+        // 之前这里是 else：只要该关有 GEO0 地形就整批跳过，等于把道具全丢了。
+        if let vbuf, let ibuf, !man.ranges.isEmpty {
+        enc.setRenderPipelineState(meshPipe)
+        enc.setDepthStencilState(depthState)
         enc.setVertexBuffer(vbuf, offset: 0, index: 0)
         for r in man.ranges where r.name.lowercased() != "plane" {
             let c = SIMD4<Float>(r.color.count >= 3 ? r.color[0] : 1, r.color.count >= 3 ? r.color[1] : 1, r.color.count >= 3 ? r.color[2] : 1, 1)
