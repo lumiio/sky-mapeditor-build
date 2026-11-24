@@ -245,6 +245,17 @@ final class MetalRenderer {
     private var fallbackTex: MTLTexture?
     private var texCache: [String: MTLTexture] = [:]
     private var terrain: TerrainPass?
+    // 整关几何（Sky-map-to-obj 导出的 OBJ → .geo.bin，一次 draw 画完整关）
+    private let library: MTLLibrary
+    private var geoPipe: MTLRenderPipelineState?
+    private var geoVB: MTLBuffer?
+    private var geoIB: MTLBuffer?
+    private var geoVC = 0
+    private var geoIC = 0
+    private var geoCenter = SIMD3<Float>(0, 0, 0)
+    private var geoRadius: Float = 10
+    /// 几何验证模式：先绕过原版材质/雾/后期，只用整关几何 + 三光，确认模型和机位是对的
+    var geoMode = true
     // 32×16 屏幕光簇（原版 Mesh2243.frag 的 u_light* 通道）
     private var countsTex: MTLTexture?
     private var offsetsTex: MTLTexture?
@@ -332,9 +343,11 @@ final class MetalRenderer {
                    let l = try? dev.makeLibrary(URL: u) { lib = l; Boot.log("metallib 已加载(\(sub ?? "根目录"))"); break }
             }
         }
-        guard let library = lib else {
+        guard let lib2 = lib else {
             Boot.log("default.metallib 缺失或加载失败"); return nil
         }
+        self.library = lib2
+        let library = lib2
         guard let vfn = library.makeFunction(name: "vs"), let ffn = library.makeFunction(name: "fs"),
               let wvs = library.makeFunction(name: "waterVS"), let wfs = library.makeFunction(name: "waterFS")
         else { Boot.log("shader 函数缺失"); return nil }
@@ -530,6 +543,22 @@ final class MetalRenderer {
                     objRanges = om.ranges
                     Boot.log("道具网格 \(vc) 顶点 / \(ic) 索引 / \(objRanges.count) 段")
                 }
+            }
+        }
+
+        // 整关几何（geo.bin）：地形 + 所有 LevelMesh 实例统一成一份 28B 顶点
+        geoVB = nil; geoIB = nil; geoIC = 0
+        if let gd = try? Data(contentsOf: root.appendingPathComponent("\(level).geo.bin")), gd.count > 8 {
+            let vc = gd.withUnsafeBytes { Int($0.load(fromByteOffset: 0, as: UInt32.self)) }
+            let ic = gd.withUnsafeBytes { Int($0.load(fromByteOffset: 4, as: UInt32.self)) }
+            if vc > 0, ic > 0, gd.count == 8 + vc * 28 + ic * 4 {
+                geoVB = gd.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!.advanced(by: 8), length: vc * 28, options: .storageModeShared) }
+                geoIB = gd.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!.advanced(by: 8 + vc * 28), length: ic * 4, options: .storageModeShared) }
+                geoVC = vc; geoIC = ic
+                stats = "GEO \(vc) 顶点 · \(ic / 3) 三角"
+                Boot.log("GEO 整关几何 \(vc) 顶点 / \(ic) 索引")
+            } else {
+                Boot.log("geo.bin 尺寸不符 \(gd.count) 期望 \(8 + vc * 28 + ic * 4)")
             }
         }
 
@@ -729,6 +758,64 @@ final class MetalRenderer {
         cb?.waitUntilCompleted()
     }
 
+    /// 几何验证渲染：一份整关几何 + 三光，直接画到 drawable，不经过雾/穹顶/tonemap。
+    private func drawGeo(_ view: MTKView, _ w: Int, _ h: Int) {
+        guard let drawable = view.currentDrawable, let geoVB, let geoIB, geoIC > 0 else { return }
+        if geoPipe == nil {
+            let vd = MTLVertexDescriptor()
+            vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 0
+            vd.attributes[1].format = .float3; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 0
+            vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 0
+            vd.layouts[0].stride = 28
+            vd.layouts[0].stepFunction = .perVertex
+            vd.layouts[0].stepRate = 1
+            let pd = MTLRenderPipelineDescriptor()
+            pd.vertexFunction = library.makeFunction(name: "geoVS")
+            pd.fragmentFunction = library.makeFunction(name: "geoFS")
+            pd.vertexDescriptor = vd
+            pd.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
+            pd.depthAttachmentPixelFormat = .depth32Float
+            geoPipe = try? device.makeRenderPipelineState(descriptor: pd)
+            Boot.log("GEO 管线 \(geoPipe != nil ? "ok" : "失败")")
+        }
+        guard let pipe = geoPipe else { return }
+        ensureTargets(w, h)
+        guard let depth = depthTex else { return }
+
+        let sea = man?.seaLevel ?? waterY
+        let eye = SIMD3<Float>(center.x + targetShift.x, sea + 1.7, center.z + targetShift.y)
+        let dir = SIMD3<Float>(cos(el) * cos(az), sin(el), cos(el) * sin(az))
+        let proj = perspective(min(100, max(25, 55 * zoom)) * Float.pi / 180, Float(w) / Float(h), 0.08, 1500)
+        let vm = lookAt(eye, eye + dir, SIMD3<Float>(0, 1, 0))
+        let vp = proj * vm
+
+        let rp = MTLRenderPassDescriptor()
+        rp.colorAttachments[0].texture = drawable.texture
+        rp.colorAttachments[0].loadAction = .clear
+        rp.colorAttachments[0].storeAction = .store
+        rp.colorAttachments[0].clearColor = MTLClearColor(red: 0.06, green: 0.075, blue: 0.075, alpha: 1)
+        rp.depthAttachment.texture = depth
+        rp.depthAttachment.loadAction = .clear
+        rp.depthAttachment.clearDepth = 1.0
+        rp.depthAttachment.storeAction = .dontCare
+
+        guard let cb = queue.makeCommandBuffer(), let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
+        enc.setRenderPipelineState(pipe)
+        enc.setDepthStencilState(depthState)
+        enc.setCullMode(.none)
+        enc.setVertexBuffer(geoVB, offset: 0, index: 0)
+        var vpCopy = vp
+        enc.setVertexBytes(&vpCopy, length: MemoryLayout<simd_float4x4>.size, index: 1)
+        enc.drawIndexedPrimitives(type: .triangle, indexCount: geoIC, indexType: .uint32, indexBuffer: geoIB, indexBufferOffset: 0)
+        enc.endEncoding()
+        cb.present(drawable)
+        cb.commit()
+        if frameIdx < 2 {
+            Boot.log("GEO 帧 \(frameIdx) eye=\(eye) az=\(az) el=\(el) 三角=\(geoIC/3)")
+        }
+        frameIdx += 1
+    }
+
     func draw(in view: MTKView) {
         var miss: [String] = []
         if man == nil { miss.append("man") }
@@ -751,6 +838,10 @@ final class MetalRenderer {
         lastError = nil
         let w = view.drawableSize.width > 0 ? Int(view.drawableSize.width) : 1
         let h = view.drawableSize.height > 0 ? Int(view.drawableSize.height) : 1
+        if geoMode, geoIC > 0, view.currentDrawable != nil {
+            drawGeo(view, w, h)
+            return
+        }
         ensureTargets(w, h)
         guard let sceneTex, let sceneTex2, let depthTex else { return }
         // 雾这一路输出恒为白，旁路时连纹理都不留，保证探针/tonemap 读的是场景本身

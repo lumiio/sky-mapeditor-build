@@ -455,7 +455,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                     text += " · 上次断在 " + self.pendingPrevLog
                     self.pendingPrevLog = ""
                 }
-                self.hud.text = "v11 · " + text
+                self.hud.text = "v12 · " + text
                 self.refreshToggles()
                 self.syncTitle()
             }

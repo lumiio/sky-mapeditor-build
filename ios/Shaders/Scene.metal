@@ -6406,3 +6406,26 @@ fragment float4 domeFadeFS(DomeOut in [[stage_in]],
   float t5827 = fmax(t5826, 0.000000e+00);
   return float4(0.0, 0.0, 0.0, 0.0);
 }
+
+// ===== 几何验证管线（geo.bin：pos f3 | nrm f3 | rgba u8x4，28B）=====
+struct GeoVIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 col [[attribute(2)]]; };
+struct GeoOut { float4 pos [[position]]; float3 nrm; float3 col; };
+
+vertex GeoOut geoVS(GeoVIn in [[stage_in]], constant float4x4 &vp [[buffer(1)]]) {
+    GeoOut o;
+    o.pos = vp * float4(in.pos, 1.0);
+    o.nrm = in.nrm;
+    o.col = in.col.rgb;
+    return o;
+}
+
+fragment float4 geoFS(GeoOut in [[stage_in]]) {
+    float3 n = normalize(in.nrm);
+    float3 L1 = normalize(float3(0.42, 0.86, 0.28));
+    float3 L2 = normalize(float3(-0.48, 0.30, -0.62));
+    float key = max(dot(n, L1), 0.0);
+    float fill = max(dot(n, L2), 0.0);
+    float up = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+    float3 c = in.col * (0.30 + 0.52 * key + 0.22 * fill) + float3(0.015, 0.020, 0.024) * up;
+    return float4(c, 1.0);
+}
