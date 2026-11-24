@@ -293,9 +293,9 @@ final class MetalRenderer {
     var sunAzim: Float = 145
     var daylightMix: Float = 0.15
     var fogDensity: Float = 0.004
-    var geoRenderMode: Int = 0
+    var geoRenderMode: Int = 3
     var showGrid = false
-    var showMarkers = true
+    var showMarkers = false
     var showBloom = false
     // 32×16 屏幕光簇（原版 Mesh2243.frag 的 u_light* 通道）
     private var countsTex: MTLTexture?

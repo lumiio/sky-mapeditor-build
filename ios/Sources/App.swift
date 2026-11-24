@@ -884,7 +884,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                 self.rebuildRightPanel()
                 self.refreshButtons()
                 self.updateStatus()
-                var text = "v13 · " + nr.stats
+                var text = "v14 · " + nr.stats
                 if let err = nr.lastError { text = "加载失败：" + err }
                 if !self.pendingPrevLog.isEmpty { text += " · 上次断在 " + self.pendingPrevLog; self.pendingPrevLog = "" }
                 self.hud.text = text
