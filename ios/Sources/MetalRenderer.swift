@@ -1515,7 +1515,7 @@ final class MetalRenderer {
                 tenc.setRenderPipelineState(tonemapPipe)
                 tenc.setFragmentBytes(&tu, length: MemoryLayout<TUni>.stride, index: 1)
                 if frameIdx == 0 { Boot.log("调试：雾后处理旁路 debugSkipFogPost=\(debugSkipFogPost)（tonemap 直读 sceneTex2）") }
-                tenc.setFragmentTexture((fogOut != nil && !debugSkipFogPost) ? fogOut! : sceneTex2, index: 0)
+                tenc.setFragmentTexture((fogOut != nil && !debugSkipFogPost) ? fogOut! : sceneTex, index: 0)   // 旁路雾时读场景本身，不是没写过的 sceneTex2
                 tenc.setFragmentTexture(blackTex ?? fallbackTex, index: 1)
                 tenc.setFragmentSamplerState(clampSampler, index: 0)
                 tenc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
