@@ -1111,8 +1111,11 @@ final class MetalRenderer {
             let sea = man.seaLevel
             // 站高 1.7 m：优先用关卡海平面（烛窟 -5），没有就用包围盒底面
             let eyeY = geoEyeBase ?? (sea != nil ? sea! + 1.7 : minY + 1.7)
-            eye = SIMD3<Float>(center.x + walkPos.x, max(eyeY + eyeLift, minY + 0.4), center.z + walkPos.y)
-            let dir = SIMD3<Float>(cos(el) * cos(az), sin(el), cos(el) * sin(az))
+            // terrain.bin / objects.bin 是 GEO0 坐标（x 与 OBJ 相反），geo.bin 是 OBJ 坐标；
+            // 原版链走 GEO0 空间：x 取反，朝向也镜像，否则相机站在 -26 看 +26 的空气。
+            let oldAz = Float.pi - az
+            eye = SIMD3<Float>(-center.x - walkPos.x, max(eyeY + eyeLift, minY + 0.4), center.z + walkPos.y)
+            let dir = SIMD3<Float>(cos(el) * cos(oldAz), sin(el), cos(el) * sin(oldAz))
             lookAtPoint = eye + dir
             nearD = 0.08
             farD = 1200
