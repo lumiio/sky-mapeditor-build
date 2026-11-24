@@ -6409,8 +6409,8 @@ fragment float4 domeFadeFS(DomeOut in [[stage_in]],
 
 
 // ===== 几何 / 编辑器管线（geo.bin：pos f3 | nrm f3 | rgba u8x4，28B）=====
-struct GeoVIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 col [[attribute(2)]]; };
-struct GeoOut { float4 pos [[position]]; float3 nrm; float3 col; float3 world; float psize [[point_size]]; };
+struct GeoVIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 col [[attribute(2)]]; float4 baked [[attribute(3)]]; };
+struct GeoOut { float4 pos [[position]]; float3 nrm; float3 col; float3 baked; float3 world; float psize [[point_size]]; };
 
 struct GeoU {
     float4x4 vp;
@@ -6427,6 +6427,7 @@ vertex GeoOut geoVS(GeoVIn in [[stage_in]], constant GeoU &u [[buffer(1)]]) {
     o.pos = u.vp * float4(in.pos, 1.0);
     o.nrm = in.nrm;
     o.col = in.col.rgb;
+    o.baked = in.baked.rgb;
     o.world = in.pos;
     o.psize = 2.0;
     return o;
@@ -6434,6 +6435,9 @@ vertex GeoOut geoVS(GeoVIn in [[stage_in]], constant GeoU &u [[buffer(1)]]) {
 
 fragment float4 geoFS(GeoOut in [[stage_in]], constant GeoU &u [[buffer(1)]]) {
     int mode = int(u.misc.x + 0.5);
+    if (mode == 3) {
+        return float4(pow(in.baked, float3(2.2)), 1.0);
+    }
     float3 base = in.col;
     if (mode == 1) base = float3(0.62, 0.60, 0.56);
     float3 n = normalize(in.nrm);

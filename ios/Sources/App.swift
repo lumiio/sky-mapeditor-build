@@ -277,11 +277,11 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         view.addSubview(leftPanel)
         view.addSubview(rightPanel)
         NSLayoutConstraint.activate([
-            leftPanel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: -330),
+            leftPanel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: -380),
             leftPanel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 96),
             leftPanel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
             leftPanel.widthAnchor.constraint(equalToConstant: 300),
-            rightPanel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: 330),
+            rightPanel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: 380),
             rightPanel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 96),
             rightPanel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
             rightPanel.widthAnchor.constraint(equalToConstant: 300),
@@ -768,8 +768,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
     @objc private func onGeoTap() {
         guard let r = renderer else { return }
-        r.geoRenderMode = (r.geoRenderMode + 1) % 3
-        hud.text = ["原版材质", "参考材质", "点云"][r.geoRenderMode]
+        r.geoRenderMode = (r.geoRenderMode + 1) % 4
+        hud.text = ["原版材质", "参考材质", "点云", "烘焙光"][r.geoRenderMode]
         refreshButtons()
     }
 
@@ -788,8 +788,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         btnMark.backgroundColor = r.showMarkers ? on : UIColor(white: 1, alpha: 0.10)
         btnBloom.backgroundColor = r.showBloom ? on : UIColor(white: 1, alpha: 0.10)
         btnGeo.backgroundColor = UIColor(white: 1, alpha: 0.10)
-        let icons = ["cube", "square.stack.3d.up", "circle.grid.3x3"]
-        btnGeo.setImage(UIImage(systemName: icons[min(2, r.geoRenderMode)],
+        let icons = ["cube", "square.stack.3d.up", "circle.grid.3x3", "sun.max"]
+        btnGeo.setImage(UIImage(systemName: icons[min(3, r.geoRenderMode)],
                                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)), for: .normal)
     }
 

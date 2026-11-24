@@ -287,6 +287,7 @@ final class MetalRenderer {
     var moveInput = SIMD2<Float>(0, 0)
     var walkPos = SIMD2<Float>(0, 0)
     var eyeLift: Float = 0
+    private var geoEyeBase: Float?
     private var lastGeoTime = CACurrentMediaTime()
     var sunElev: Float = 55
     var sunAzim: Float = 145
@@ -586,19 +587,24 @@ final class MetalRenderer {
             }
         }
 
-        // 整关几何（geo.bin）：地形 + 所有 LevelMesh 实例统一成一份 28B 顶点
+        // 整关几何（geo.bin）：地形 + 所有 LevelMesh 实例统一成一份 32B 顶点（含烘焙色）
         geoVB = nil; geoIB = nil; geoIC = 0
         if let gd = try? Data(contentsOf: root.appendingPathComponent("\(level).geo.bin")), gd.count > 8 {
             let vc = gd.withUnsafeBytes { Int($0.load(fromByteOffset: 0, as: UInt32.self)) }
             let ic = gd.withUnsafeBytes { Int($0.load(fromByteOffset: 4, as: UInt32.self)) }
-            if vc > 0, ic > 0, gd.count == 8 + vc * 28 + ic * 4 {
-                geoVB = gd.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!.advanced(by: 8), length: vc * 28, options: .storageModeShared) }
-                geoIB = gd.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!.advanced(by: 8 + vc * 28), length: ic * 4, options: .storageModeShared) }
+            if vc > 0, ic > 0, gd.count == 8 + vc * 32 + ic * 4 {
+                geoVB = gd.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!.advanced(by: 8), length: vc * 32, options: .storageModeShared) }
+                geoIB = gd.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!.advanced(by: 8 + vc * 32), length: ic * 4, options: .storageModeShared) }
                 geoVC = vc; geoIC = ic
                 stats = "GEO \(vc) 顶点 · \(ic / 3) 三角"
+                if let gj = try? Data(contentsOf: root.appendingPathComponent("\(level).geo.json")),
+                   let o = try? JSONSerialization.jsonObject(with: gj) as? [String: Any],
+                   let sp = o["spawn"] as? [Double], sp.count >= 3 {
+                    geoEyeBase = Float(sp[1])
+                }
                 Boot.log("GEO 整关几何 \(vc) 顶点 / \(ic) 索引")
             } else {
-                Boot.log("geo.bin 尺寸不符 \(gd.count) 期望 \(8 + vc * 28 + ic * 4)")
+                Boot.log("geo.bin 尺寸不符 \(gd.count) 期望 \(8 + vc * 32 + ic * 4)")
             }
         }
 
@@ -614,6 +620,12 @@ final class MetalRenderer {
         let fb = mm.focus
         center = SIMD3<Float>((fb[0]+fb[3])/2, (fb[1]+fb[4])/2, (fb[2]+fb[5])/2)
         radius = max(1, simd_length(SIMD3<Float>(fb[3]-fb[0], fb[4]-fb[1], fb[5]-fb[2])) / 2)
+        // geo 有出生点（洞窟内部）时，把相机和网格挪到出生点，别对着 26 m 外的背景壳
+        if let gj = try? Data(contentsOf: root.appendingPathComponent("\(level).geo.json")),
+           let o = try? JSONSerialization.jsonObject(with: gj) as? [String: Any],
+           let sp = o["spawn"] as? [Double], sp.count >= 3 {
+            center.x = Float(sp[0]); center.z = Float(sp[2]); geoEyeBase = Float(sp[1])
+        }
 
         // Beamo 体积网格（FogVolume 用的遮挡体）
         if let bvURL = root.appendingPathComponent(level + ".beamo.verts") as URL?,
@@ -648,15 +660,15 @@ final class MetalRenderer {
         guard let d = try? Data(contentsOf: root.appendingPathComponent("\(level).scene.json")),
               let cs = try? JSONDecoder().decode([SceneClass].self, from: d) else { return }
         sceneClasses = cs
-        let sea = waterY + 0.03
+        let sea = (geoEyeBase ?? (waterY + 1.7)) - 1.2
 
         func lineData(_ verts: [SIMD3<Float>], _ colors: [(UInt8, UInt8, UInt8)], alpha: UInt8 = 255) -> Data {
-            var out = Data(); out.reserveCapacity(verts.count * 28)
+            var out = Data(); out.reserveCapacity(verts.count * 32)
             for i in 0..<verts.count {
                 let f: [Float] = [verts[i].x, verts[i].y, verts[i].z, 0, 0, 0]
                 f.withUnsafeBytes { raw in out.append(contentsOf: raw) }
                 let c = colors[min(i, colors.count - 1)]
-                out.append(contentsOf: [c.0, c.1, c.2, alpha])
+                out.append(contentsOf: [c.0, c.1, c.2, alpha, 0, 0, 0, 255])
             }
             return out
         }
@@ -716,7 +728,7 @@ final class MetalRenderer {
 
     func focus(on p: SIMD3<Float>) {
         walkPos = SIMD2<Float>(p.x - center.x, p.z - center.z)
-        eyeLift = min(120, max(-40, p.y - (waterY + 1.7)))
+        eyeLift = min(120, max(-40, p.y - (geoEyeBase ?? (waterY + 1.7))))
     }
 
     /// 导出当前关卡的整关几何（web 版「导出 bin」）
@@ -898,7 +910,8 @@ final class MetalRenderer {
         vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 0
         vd.attributes[1].format = .float3; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 0
         vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 0
-        vd.layouts[0].stride = 28
+        vd.attributes[3].format = .uchar4Normalized; vd.attributes[3].offset = 28; vd.attributes[3].bufferIndex = 0
+        vd.layouts[0].stride = 32
         vd.layouts[0].stepFunction = .perVertex
         vd.layouts[0].stepRate = 1
         func makePipe(_ v: String, _ f: String, _ fmt: MTLPixelFormat, blend: Bool = false) -> MTLRenderPipelineState? {
@@ -943,7 +956,8 @@ final class MetalRenderer {
         }
 
         let sea = man?.seaLevel ?? waterY
-        let eye = SIMD3<Float>(center.x + walkPos.x, sea + 1.7 + eyeLift, center.z + walkPos.y)
+        let eyeBase = geoEyeBase ?? (sea + 1.7)
+        let eye = SIMD3<Float>(center.x + walkPos.x, eyeBase + eyeLift, center.z + walkPos.y)
         let dir = SIMD3<Float>(cos(el) * cos(az), sin(el), cos(el) * sin(az))
         let proj = perspective(min(100, max(25, 55 * zoom)) * Float.pi / 180, Float(w) / Float(h), 0.08, 1500)
         let vm = lookAt(eye, eye + dir, SIMD3<Float>(0, 1, 0))
