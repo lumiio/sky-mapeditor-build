@@ -358,7 +358,8 @@ final class MetalRenderer {
     var debugSkipSkyDome = false
     /// 诊断开关：真机雾管线输出恒为「1.0」(=亮度 0)，会把整帧乘黑；先让 tonemap 直读场景色，
     /// 用亮度图确认场景本身有没有内容，再回来修雾。仅诊断期打开，日志会写明。
-    var debugSkipFogPost = true   // 雾合成现在输出整屏白（fogVolumeIntensity=-0.7），先默认旁路；开关可开
+    var debugSkipFogPost = true
+    var debugSkipObjects = true   // 道具里混着雾片/大卡片，先只留原版地形核对贴图   // 雾合成现在输出整屏白（fogVolumeIntensity=-0.7），先默认旁路；开关可开
     private var frameIdx = 0
 
     private var sceneTex: MTLTexture?
@@ -1316,7 +1317,7 @@ final class MetalRenderer {
         }
         // 关卡里另一套静态网格（编辑器导出的 .verts/.idx，含篝火/火把/烛台/岩石等道具）。
         // 之前这里是 else：只要该关有 GEO0 地形就整批跳过，等于把道具全丢了。
-        if let vbuf, let ibuf, !man.ranges.isEmpty {
+        if !debugSkipObjects, let vbuf, let ibuf, !man.ranges.isEmpty {
         enc.setRenderPipelineState(meshPipe)
         enc.setDepthStencilState(depthState)
         enc.setVertexBuffer(vbuf, offset: 0, index: 0)
