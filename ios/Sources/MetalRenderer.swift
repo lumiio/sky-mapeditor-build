@@ -258,6 +258,10 @@ final class MetalRenderer {
     private(set) var levelName: String = ""
     private var man: Manifest?
     private var vbuf: MTLBuffer?
+    // LevelMesh 实例打包出来的道具网格（SkyEngine/tools/pack_objects）
+    private var objVB: MTLBuffer?
+    private var objIB: MTLBuffer?
+    private var objRanges: [RangeDesc] = []
     private var beamoVB: MTLBuffer?
     private var beamoIB: MTLBuffer?
     private var ibuf: MTLBuffer?
@@ -505,6 +509,26 @@ final class MetalRenderer {
             vbuf = vb.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!, length: $0.count, options: .storageModeShared) }
             ibuf = ib.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!, length: $0.count, options: .storageModeShared) }
             guard vbuf != nil, ibuf != nil else { lastError = "顶点/索引 buffer 创建失败"; return }
+        }
+
+        // LevelMesh 道具（Objects.level.bin 里的实例 + Data/Meshes/Bin/*.mesh，离线打包）
+        if let od = try? Data(contentsOf: root.appendingPathComponent("\(level).objects.json")),
+           let ob = try? Data(contentsOf: root.appendingPathComponent("\(level).objects.bin")), ob.count > 8 {
+            struct ObjectManifest: Decodable { let ranges: [RangeDesc] }
+            if let om = try? JSONDecoder().decode(ObjectManifest.self, from: od) {
+                let vc = ob.withUnsafeBytes { Int($0.load(fromByteOffset: 0, as: UInt32.self)) }
+                let ic = ob.withUnsafeBytes { Int($0.load(fromByteOffset: 4, as: UInt32.self)) }
+                if vc > 0, ic > 0, ob.count == 8 + vc * 72 + ic * 4 {
+                    objVB = ob.withUnsafeBytes { raw in
+                        device.makeBuffer(bytes: raw.baseAddress!.advanced(by: 8), length: vc * 72, options: .storageModeShared)
+                    }
+                    objIB = ob.withUnsafeBytes { raw in
+                        device.makeBuffer(bytes: raw.baseAddress!.advanced(by: 8 + vc * 72), length: ic * 4, options: .storageModeShared)
+                    }
+                    objRanges = om.ranges
+                    Boot.log("道具网格 \(vc) 顶点 / \(ic) 索引 / \(objRanges.count) 段")
+                }
+            }
         }
 
         // 取景：三角形数加权落在最密的一簇
@@ -968,6 +992,30 @@ final class MetalRenderer {
             enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                       indexBuffer: ibuf, indexBufferOffset: r.start * 4)
         }
+        }
+        // LevelMesh 道具：与原版 Mesh 顶点同布局（72 B），走同一条原版 Mesh 管线
+        if let objVB, let objIB, !objRanges.isEmpty {
+            enc.setRenderPipelineState(meshPipe)
+            enc.setDepthStencilState(depthState)
+            enc.setVertexBuffer(objVB, offset: 0, index: 0)
+            for r in objRanges {
+                let c = SIMD4<Float>(r.color.count >= 3 ? r.color[0] : 1, r.color.count >= 3 ? r.color[1] : 1, r.color.count >= 3 ? r.color[2] : 1, 1)
+                if let n = r.texture, let t = tex(n) { enc.setFragmentTexture(t, index: 0) } else { enc.setFragmentTexture(fallbackTex, index: 0) }
+                if let n = r.texture2, let t = tex(n) { enc.setFragmentTexture(t, index: 1) } else { enc.setFragmentTexture(fallbackTex, index: 1) }
+                var cc = c
+                enc.setFragmentBytes(&cc, length: MemoryLayout<SIMD4<Float>>.stride, index: 2)
+                if let n = r.normTex, let t = tex(n) { enc.setFragmentTexture(t, index: 2) } else { enc.setFragmentTexture(flatNormal ?? fallbackTex, index: 2) }
+                if let n = r.lightTex, let t = tex(n) { enc.setFragmentTexture(t, index: 3) } else { enc.setFragmentTexture(whiteTex ?? fallbackTex, index: 3) }
+                var sl = SIMD4<Float>(r.selfLit?.count ?? 0 >= 4 ? r.selfLit![0] : 0,
+                                      r.selfLit?.count ?? 0 >= 4 ? r.selfLit![1] : 0,
+                                      r.selfLit?.count ?? 0 >= 4 ? r.selfLit![2] : 0,
+                                      r.selfLit?.count ?? 0 >= 4 ? r.selfLit![3] : 0)
+                enc.setFragmentBytes(&sl, length: MemoryLayout<SIMD4<Float>>.stride, index: 3)
+                var prm = SIMD4<Float>(r.uvScale ?? 1, r.normScale ?? 1, 0, 0)
+                enc.setFragmentBytes(&prm, length: MemoryLayout<SIMD4<Float>>.stride, index: 4)
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
+                                          indexBuffer: objIB, indexBufferOffset: r.start * 4)
+            }
         }
         enc.endEncoding()
 
