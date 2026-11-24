@@ -294,6 +294,7 @@ final class MetalRenderer {
     var daylightMix: Float = 0.15
     var fogDensity: Float = 0.004
     var geoRenderMode: Int = 3
+    var useGeo = false           // 默认原版材质链，几何预览才切
     var showGrid = false
     var showMarkers = false
     var showBloom = false
@@ -1085,7 +1086,7 @@ final class MetalRenderer {
         lastError = nil
         let w = view.drawableSize.width > 0 ? Int(view.drawableSize.width) : 1
         let h = view.drawableSize.height > 0 ? Int(view.drawableSize.height) : 1
-        if geoMode, geoIC > 0, view.currentDrawable != nil {
+        if useGeo, geoMode, geoIC > 0, view.currentDrawable != nil {
             drawGeo(view, w, h)
             return
         }
@@ -1109,8 +1110,8 @@ final class MetalRenderer {
             let minY = min(b.count >= 6 ? b[1] : center.y, center.y)
             let sea = man.seaLevel
             // 站高 1.7 m：优先用关卡海平面（烛窟 -5），没有就用包围盒底面
-            let eyeY = (sea != nil ? sea! + 1.7 : minY + 1.7)
-            eye = SIMD3<Float>(center.x + targetShift.x, max(eyeY, minY + 0.4), center.z + targetShift.y)
+            let eyeY = geoEyeBase ?? (sea != nil ? sea! + 1.7 : minY + 1.7)
+            eye = SIMD3<Float>(center.x + walkPos.x, max(eyeY + eyeLift, minY + 0.4), center.z + walkPos.y)
             let dir = SIMD3<Float>(cos(el) * cos(az), sin(el), cos(el) * sin(az))
             lookAtPoint = eye + dir
             nearD = 0.08

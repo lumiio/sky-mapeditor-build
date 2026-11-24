@@ -768,8 +768,10 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
     @objc private func onGeoTap() {
         guard let r = renderer else { return }
-        r.geoRenderMode = (r.geoRenderMode + 1) % 4
-        hud.text = ["原版材质", "参考材质", "点云", "烘焙光"][r.geoRenderMode]
+        if !r.useGeo { r.useGeo = true; r.geoRenderMode = 0 }
+        else if r.geoRenderMode >= 3 { r.useGeo = false }
+        else { r.geoRenderMode += 1 }
+        hud.text = r.useGeo ? ["原版材质", "参考材质", "点云", "烘焙光"][r.geoRenderMode] : "原版材质（原版贴图）"
         refreshButtons()
     }
 
@@ -789,7 +791,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         btnBloom.backgroundColor = r.showBloom ? on : UIColor(white: 1, alpha: 0.10)
         btnGeo.backgroundColor = UIColor(white: 1, alpha: 0.10)
         let icons = ["cube", "square.stack.3d.up", "circle.grid.3x3", "sun.max"]
-        btnGeo.setImage(UIImage(systemName: icons[min(3, r.geoRenderMode)],
+        btnGeo.setImage(UIImage(systemName: r.useGeo ? icons[min(3, r.geoRenderMode)] : "cube.transparent",
                                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)), for: .normal)
     }
 
@@ -884,7 +886,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                 self.rebuildRightPanel()
                 self.refreshButtons()
                 self.updateStatus()
-                var text = "v14 · " + nr.stats
+                var text = "v16 · 原版贴图 · " + nr.stats
                 if let err = nr.lastError { text = "加载失败：" + err }
                 if !self.pendingPrevLog.isEmpty { text += " · 上次断在 " + self.pendingPrevLog; self.pendingPrevLog = "" }
                 self.hud.text = text
