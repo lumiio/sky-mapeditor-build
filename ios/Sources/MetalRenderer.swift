@@ -929,10 +929,10 @@ final class MetalRenderer {
         guard let drawable = view.currentDrawable, let geoVB, let geoIB, geoIC > 0 else { return }
         buildGeoPipelines()
         ensureTargets(w, h)
-        guard let geoPipe, let linePipe, let compositePipe, let sceneTex, let depthTex else { return }
+        guard let geoPipe, let linePipe, let compositePipe = geoCompositePipe, let sceneTex, let depthTex else { return }
 
         let now = CACurrentMediaTime()
-        let dt = min(0.05, max(0.001, now - lastGeoTime))
+        let dt = Float(min(0.05, max(0.001, now - lastGeoTime)))
         lastGeoTime = now
         if abs(moveInput.x) > 0.001 || abs(moveInput.y) > 0.001 {
             let fwd = SIMD2<Float>(cos(az), sin(az))
