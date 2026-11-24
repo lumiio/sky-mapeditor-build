@@ -18,13 +18,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 }
 
-/// MTKView + 手势：单指旋转，双指捏合缩放
+/// MTKView + 手势：单指旋转视角，双指平移，捏合缩放
 final class MetalView: MTKView {
     weak var renderer: MetalRenderer?
     private var lastPoint = CGPoint.zero
 
-    /// MTKView 按屏幕 scale 自己算 drawable，3× 屏会到 1320×2868，一帧十几张全屏贴图 ≈300MB。
-    /// 这里强制封在 2×（机身内存和带宽都省一半），不然切关卡时新旧叠加会被系统杀掉。
     override func layoutSubviews() {
         super.layoutSubviews()
         guard bounds.width > 1, bounds.height > 1 else { return }
@@ -43,32 +41,99 @@ final class MetalView: MTKView {
         let dx = Float(p.x - lastPoint.x), dy = Float(p.y - lastPoint.y)
         lastPoint = p
         r.az += dx * 0.006
-        let lo: Float = r.firstPerson ? -1.35 : -0.2
-        r.el = min(1.35, max(lo, r.el - dy * 0.006))
+        r.el = min(1.35, max(-1.35, r.el - dy * 0.006))
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {}
+}
+
+/// 左下角虚拟摇杆：推杆 → (左右, 前后)，松手回中
+final class Joystick: UIView {
+    var onMove: ((SIMD2<Float>) -> Void)?
+    private let knob = UIView()
+    private var radius: CGFloat = 34
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = UIColor(white: 1, alpha: 0.10)
+        layer.borderWidth = 1
+        layer.borderColor = UIColor(white: 1, alpha: 0.14).cgColor
+        layer.cornerCurve = .continuous
+        knob.backgroundColor = UIColor(white: 1, alpha: 0.22)
+        knob.layer.borderWidth = 1
+        knob.layer.borderColor = UIColor(white: 1, alpha: 0.30).cgColor
+        knob.isUserInteractionEnabled = false
+        addSubview(knob)
+        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(pan(_:))))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerRadius = bounds.width / 2
+        radius = max(20, bounds.width / 2 - 26)
+        let k: CGFloat = 44
+        knob.frame = CGRect(x: bounds.midX - k / 2, y: bounds.midY - k / 2, width: k, height: k)
+        knob.layer.cornerRadius = k / 2
+    }
+
+    @objc private func pan(_ g: UIPanGestureRecognizer) {
+        let t = g.translation(in: self)
+        var dx = Float(t.x) / Float(radius)
+        var dy = Float(t.y) / Float(radius)
+        let len = sqrt(dx * dx + dy * dy)
+        if len > 1 { dx /= len; dy /= len }
+        knob.transform = CGAffineTransform(translationX: CGFloat(dx) * radius * 0.65,
+                                           y: CGFloat(dy) * radius * 0.65)
+        if g.state == .ended || g.state == .cancelled || g.state == .failed {
+            knob.transform = .identity
+            onMove?(SIMD2<Float>(0, 0))
+        } else {
+            onMove?(SIMD2<Float>(dx, -dy))
+        }
+    }
 }
 
 final class ViewerController: UIViewController, MTKViewDelegate {
     private var renderer: MetalRenderer?
     private var view3d: MetalView!
 
-    // 极简 HUD：左上角关卡胶囊 + 右下角一个圆按钮；所有设置收在点开后的底部面板里。
-    private var pill: UIButton!
-    private var titleLabel: UILabel!
     private var hud: UILabel!
-    private var gear: UIButton!
+    private var levelButton: UIButton!
+    private var objectsButton: UIButton!
+    private var envButton: UIButton!
+
     private var scrim: UIControl!
-    private var sheet: UIView!
-    private var levelChips: [UIButton] = []
-    private var swFog: UISwitch!
-    private var swCloud: UISwitch!
-    private var swDome: UISwitch!
-    private var swFP: UISwitch!
-    private var swObj: UISwitch!
-    private var expoSlider: UISlider!
-    private var expoLabel: UILabel!
+    private var leftPanel: UIView!
+    private var rightPanel: UIView!
+    private var leftStack: UIStackView!
+    private var rightStack: UIStackView!
+    private var levelSheet: UIView!
+
+    private var joystick: Joystick!
+    private var btnFocus: UIButton!
+    private var btnGrid: UIButton!
+    private var btnMark: UIButton!
+    private var btnGeo: UIButton!
+    private var btnBloom: UIButton!
+    private var statusLabel: UILabel!
+    private var exportButton: UIButton!
+
+    private var slMix: UISlider!
+    private var slElev: UISlider!
+    private var slAzim: UISlider!
+    private var slFog: UISlider!
+    private var valMix: UILabel!
+    private var valElev: UILabel!
+    private var valAzim: UILabel!
+    private var valFog: UILabel!
+    private var envReadout: UILabel!
+
+    private var leftOpen = false
+    private var rightOpen = false
     private var sheetShown = false
+    private var expandedClass: Int = -1
+    private var selectedPos = SIMD3<Float>(0, 0, 0)
+    private var hasSelection = false
 
     private var loading = false
     private var cur = 0
@@ -78,30 +143,29 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                             "Dawn_TrialsEarth", "Dawn_TrialsAir", "Night_JarCave", "AR_WheatField"]
     private let levelNames = ["烛窟", "蝶原", "草原村", "土试炼", "风试炼", "罐洞", "麦田"]
 
-    /// 全界面只用一个主色
     private let accent = UIColor(red: 0.31, green: 0.55, blue: 0.98, alpha: 1.0)
+    private let cardBG = UIColor(white: 0.055, alpha: 0.98)
     private let chipOff = UIColor(white: 1.0, alpha: 0.09)
-    private let textDim = UIColor(white: 1.0, alpha: 0.55)
+    private let dim = UIColor(white: 1.0, alpha: 0.55)
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
         setupView()
-        setupCard()
-        // 上一轮没跑到 first frame 就没了，说明崩在初始化里，把断点留着
+        setupEditorUI()
         let prev = Boot.tail(40)
         Boot.reset()
         if !prev.isEmpty && !prev.contains("first frame") {
-            pendingPrevLog = prev.split(separator: "\n").suffix(2).map { String($0.prefix(70)) }.joined(separator: " ← ")
+            pendingPrevLog = prev.split(separator: "\n").suffix(2).map { String($0.prefix(60)) }.joined(separator: " ← ")
         }
         load(level: levelIDs[0], index: 0)
     }
 
+    // MARK: - 3D 视图
+
     private func setupView() {
         view3d = MetalView(frame: view.bounds, device: MTLCreateSystemDefaultDevice())
         view3d.translatesAutoresizingMaskIntoConstraints = false
-        // 原版 Tonemap 输出是线性值，编辑器在回读时手动做 linear→sRGB；
-        // 这里用 sRGB drawable 让硬件完成同一转换，否则画面会整体压暗（gamma 2.2）
         view3d.colorPixelFormat = .bgra8Unorm_srgb
         view3d.depthStencilPixelFormat = .invalid
         view3d.framebufferOnly = false
@@ -109,17 +173,14 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         view3d.delegate = self
         view3d.isMultipleTouchEnabled = true
         view3d.preferredFramesPerSecond = 60
-        // 3× 屏下 drawable 是 1320×2868，一帧十几张全屏贴图 ≈300MB；封顶 2×，内存降 55%
         view3d.contentScaleFactor = min(UIScreen.main.scale, 2.0)
         view.addSubview(view3d)
-
         NSLayoutConstraint.activate([
             view3d.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             view3d.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             view3d.topAnchor.constraint(equalTo: view.topAnchor),
             view3d.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(onPinch(_:)))
         view3d.addGestureRecognizer(pinch)
         let dbl = UITapGestureRecognizer(target: self, action: #selector(onReset))
@@ -130,269 +191,647 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         view3d.addGestureRecognizer(pan)
     }
 
-    private func setupCard() {
-        // ---- 左上角：关卡胶囊 ----
-        pill = UIButton(type: .system)
-        pill.translatesAutoresizingMaskIntoConstraints = false
-        pill.backgroundColor = UIColor(white: 1, alpha: 0.10)
-        pill.layer.cornerRadius = 17
-        pill.layer.cornerCurve = .continuous
-        pill.layer.borderWidth = 1
-        pill.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
-        pill.contentEdgeInsets = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 12)
-        pill.addTarget(self, action: #selector(showSheet), for: .touchUpInside)
+    // MARK: - 编辑器 UI
 
-        titleLabel = UILabel()
-        titleLabel.textColor = .white
-        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
-        titleLabel.isUserInteractionEnabled = false
-        pill.addSubview(titleLabel)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 14),
-            titleLabel.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: pill.trailingAnchor, constant: -12),
-        ])
-        view.addSubview(pill)
+    private func setupEditorUI() {
+        // 顶部品牌
+        let brand = UILabel()
+        brand.text = "SKY 地图编辑器"
+        brand.font = .systemFont(ofSize: 13, weight: .semibold)
+        brand.textColor = UIColor(white: 1, alpha: 0.92)
+        brand.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(brand)
+
+        let brandSub = UILabel()
+        brandSub.text = "METAL PREVIEW"
+        brandSub.font = .systemFont(ofSize: 8, weight: .medium)
+        brandSub.textColor = UIColor(white: 1, alpha: 0.38)
+        brandSub.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(brandSub)
+
+        exportButton = makePillButton("导出", filled: true)
+        exportButton.addTarget(self, action: #selector(onExport), for: .touchUpInside)
+        view.addSubview(exportButton)
+
+        levelButton = makePillButton(levelNames[0] + "  ▾", filled: false)
+        levelButton.addTarget(self, action: #selector(showLevelSheet), for: .touchUpInside)
+        view.addSubview(levelButton)
+
+        objectsButton = makeIconButton("square.stack.3d.up", point: 13)
+        objectsButton.addTarget(self, action: #selector(toggleLeft), for: .touchUpInside)
+        view.addSubview(objectsButton)
+
+        envButton = makeIconButton("slider.horizontal.3", point: 13)
+        envButton.addTarget(self, action: #selector(toggleRight), for: .touchUpInside)
+        view.addSubview(envButton)
 
         hud = UILabel()
         hud.textColor = UIColor(white: 1, alpha: 0.45)
-        hud.font = .systemFont(ofSize: 10.5, weight: .regular)
-        hud.numberOfLines = 2
+        hud.font = .systemFont(ofSize: 9.5, weight: .regular)
+        hud.numberOfLines = 3
         hud.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hud)
 
-        // ---- 右下角：设置 ----
-        gear = UIButton(type: .system)
-        gear.translatesAutoresizingMaskIntoConstraints = false
-        gear.setImage(UIImage(systemName: "slider.horizontal.3",
-                              withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)),
-                      for: .normal)
-        gear.tintColor = UIColor(white: 1, alpha: 0.92)
-        gear.backgroundColor = UIColor(white: 1, alpha: 0.10)
-        gear.layer.cornerRadius = 24
-        gear.layer.cornerCurve = .continuous
-        gear.layer.borderWidth = 1
-        gear.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
-        gear.addTarget(self, action: #selector(showSheet), for: .touchUpInside)
-        view.addSubview(gear)
-
         NSLayoutConstraint.activate([
-            pill.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 14),
-            pill.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
-            pill.heightAnchor.constraint(equalToConstant: 34),
-            pill.widthAnchor.constraint(greaterThanOrEqualToConstant: 96),
-            hud.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 4),
-            hud.topAnchor.constraint(equalTo: pill.bottomAnchor, constant: 6),
-            hud.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -14),
-            gear.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            gear.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-            gear.widthAnchor.constraint(equalToConstant: 48),
-            gear.heightAnchor.constraint(equalToConstant: 48),
+            brand.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            brand.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            brandSub.leadingAnchor.constraint(equalTo: brand.leadingAnchor, constant: 1),
+            brandSub.topAnchor.constraint(equalTo: brand.bottomAnchor, constant: 1),
+            exportButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            exportButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            exportButton.heightAnchor.constraint(equalToConstant: 30),
+            levelButton.leadingAnchor.constraint(equalTo: brand.leadingAnchor),
+            levelButton.topAnchor.constraint(equalTo: brandSub.bottomAnchor, constant: 8),
+            levelButton.heightAnchor.constraint(equalToConstant: 30),
+            levelButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 92),
+            envButton.trailingAnchor.constraint(equalTo: exportButton.trailingAnchor),
+            envButton.topAnchor.constraint(equalTo: exportButton.bottomAnchor, constant: 8),
+            envButton.widthAnchor.constraint(equalToConstant: 34),
+            envButton.heightAnchor.constraint(equalToConstant: 34),
+            objectsButton.trailingAnchor.constraint(equalTo: envButton.leadingAnchor, constant: -8),
+            objectsButton.centerYAnchor.constraint(equalTo: envButton.centerYAnchor),
+            objectsButton.widthAnchor.constraint(equalToConstant: 34),
+            objectsButton.heightAnchor.constraint(equalToConstant: 34),
+            hud.leadingAnchor.constraint(equalTo: brand.leadingAnchor),
+            hud.topAnchor.constraint(equalTo: levelButton.bottomAnchor, constant: 6),
+            hud.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
         ])
 
-        // ---- 遮罩 + 底部设置面板 ----
+        // 遮罩
         scrim = UIControl()
-        scrim.translatesAutoresizingMaskIntoConstraints = false
-        scrim.backgroundColor = UIColor(white: 0, alpha: 0.35)
+        scrim.backgroundColor = UIColor(white: 0, alpha: 0.30)
         scrim.alpha = 0
         scrim.isHidden = true
-        scrim.addTarget(self, action: #selector(hideSheet), for: .touchUpInside)
+        scrim.translatesAutoresizingMaskIntoConstraints = false
+        scrim.addTarget(self, action: #selector(closePanels), for: .touchUpInside)
         view.addSubview(scrim)
-
-        sheet = UIView()
-        sheet.translatesAutoresizingMaskIntoConstraints = false
-        sheet.backgroundColor = UIColor(white: 0.055, alpha: 0.99)
-        sheet.layer.cornerRadius = 24
-        sheet.layer.cornerCurve = .continuous
-        sheet.layer.borderWidth = 1
-        sheet.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
-        sheet.isHidden = true
-        view.addSubview(sheet)
-
-        let grabber = UIView()
-        grabber.translatesAutoresizingMaskIntoConstraints = false
-        grabber.backgroundColor = UIColor(white: 1, alpha: 0.24)
-        grabber.layer.cornerRadius = 2
-        sheet.addSubview(grabber)
-
-        // 关卡区：七关排两行
-        let levelTitle = UILabel()
-        levelTitle.text = "关卡"
-        levelTitle.textColor = UIColor(white: 1, alpha: 0.45)
-        levelTitle.font = .systemFont(ofSize: 11, weight: .medium)
-
-        func chipRow(_ idxs: [Int]) -> UIStackView {
-            let row = UIStackView()
-            row.axis = .horizontal; row.spacing = 6; row.alignment = .leading
-            for i in idxs {
-                let b = makeChip(levelNames[i])
-                b.tag = i
-                b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
-                levelChips.append(b)
-                row.addArrangedSubview(b)
-            }
-            row.addArrangedSubview(UIView())   // 撑开，靠左排
-            return row
-        }
-        let levelGrid = UIStackView(arrangedSubviews: [chipRow([0,1,2,3]), chipRow([4,5,6])])
-        levelGrid.axis = .vertical
-        levelGrid.spacing = 6
-        levelGrid.alignment = .leading
-
-        // 显示开关
-        swFog = makeSwitch(#selector(onSwitchFog))
-        swCloud = makeSwitch(#selector(onSwitchCloud))
-        swDome = makeSwitch(#selector(onSwitchDome))
-        swFP = makeSwitch(#selector(onSwitchFP))
-        swObj = makeSwitch(#selector(onSwitchObj))
-
-        var rowsV: [UIView] = [levelTitle, levelGrid, hairline(), makeRow("雾", swFog),
-                       makeRow("云（原版体积云）", swCloud), makeRow("天空穹顶", swDome),
-                       makeRow("第一人称（贴地视角）", swFP), hairline()]
-
-        expoLabel = UILabel()
-        expoLabel.textColor = UIColor(white: 1, alpha: 0.45)
-        expoLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        expoLabel.text = "曝光 ×1.00"
-
-        expoSlider = UISlider()
-        expoSlider.minimumValue = -2
-        expoSlider.maximumValue = 2.5
-        expoSlider.value = 0.0
-        expoSlider.minimumTrackTintColor = accent
-        expoSlider.maximumTrackTintColor = UIColor(white: 1, alpha: 0.12)
-        expoSlider.thumbTintColor = .white
-        expoSlider.addTarget(self, action: #selector(onExposure), for: .valueChanged)
-
-        let expoRow = UIStackView(arrangedSubviews: [expoLabel, expoSlider])
-        expoRow.axis = .horizontal; expoRow.spacing = 12; expoRow.alignment = .center
-        rowsV.append(expoRow)
-
-        let stack = UIStackView(arrangedSubviews: rowsV)
-        stack.axis = .vertical
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        sheet.addSubview(stack)
-
         NSLayoutConstraint.activate([
             scrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrim.topAnchor.constraint(equalTo: view.topAnchor),
             scrim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            sheet.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            sheet.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
-            sheet.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
-            grabber.topAnchor.constraint(equalTo: sheet.topAnchor, constant: 8),
-            grabber.centerXAnchor.constraint(equalTo: sheet.centerXAnchor),
-            grabber.widthAnchor.constraint(equalToConstant: 36),
-            grabber.heightAnchor.constraint(equalToConstant: 4),
-            stack.topAnchor.constraint(equalTo: sheet.topAnchor, constant: 24),
-            stack.leadingAnchor.constraint(equalTo: sheet.leadingAnchor, constant: 18),
-            stack.trailingAnchor.constraint(equalTo: sheet.trailingAnchor, constant: -18),
-            stack.bottomAnchor.constraint(equalTo: sheet.bottomAnchor, constant: -20),
         ])
 
-        refreshLevelChips()
-        refreshToggles()
+        leftPanel = makePanel()
+        rightPanel = makePanel()
+        view.addSubview(leftPanel)
+        view.addSubview(rightPanel)
+        NSLayoutConstraint.activate([
+            leftPanel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: -330),
+            leftPanel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 96),
+            leftPanel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
+            leftPanel.widthAnchor.constraint(equalToConstant: 300),
+            rightPanel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: 330),
+            rightPanel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 96),
+            rightPanel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
+            rightPanel.widthAnchor.constraint(equalToConstant: 300),
+        ])
+        leftStack = makeScrollStack(in: leftPanel)
+        rightStack = makeScrollStack(in: rightPanel)
+
+        // 摇杆
+        joystick = Joystick()
+        joystick.translatesAutoresizingMaskIntoConstraints = false
+        joystick.onMove = { [weak self] v in self?.renderer?.moveInput = v }
+        view.addSubview(joystick)
+        NSLayoutConstraint.activate([
+            joystick.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            joystick.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
+            joystick.widthAnchor.constraint(equalToConstant: 116),
+            joystick.heightAnchor.constraint(equalToConstant: 116),
+        ])
+
+        // 底部右侧功能键 2×3
+        btnFocus = makeIconButton("scope", point: 14)
+        btnGrid = makeIconButton("grid", point: 13)
+        btnMark = makeIconButton("mappin.and.ellipse", point: 13)
+        btnGeo = makeIconButton("cube", point: 13)
+        btnBloom = makeIconButton("sparkles", point: 13)
+        let btnShare = makeIconButton("square.and.arrow.up", point: 13)
+        btnFocus.addTarget(self, action: #selector(onFocusTap), for: .touchUpInside)
+        btnGrid.addTarget(self, action: #selector(onGridTap), for: .touchUpInside)
+        btnMark.addTarget(self, action: #selector(onMarkTap), for: .touchUpInside)
+        btnGeo.addTarget(self, action: #selector(onGeoTap), for: .touchUpInside)
+        btnBloom.addTarget(self, action: #selector(onBloomTap), for: .touchUpInside)
+        btnShare.addTarget(self, action: #selector(onExport), for: .touchUpInside)
+
+        func row(_ a: UIButton, _ b: UIButton) -> UIStackView {
+            let s = UIStackView(arrangedSubviews: [a, b])
+            s.axis = .horizontal; s.spacing = 8
+            a.widthAnchor.constraint(equalToConstant: 46).isActive = true
+            a.heightAnchor.constraint(equalToConstant: 46).isActive = true
+            b.widthAnchor.constraint(equalToConstant: 46).isActive = true
+            b.heightAnchor.constraint(equalToConstant: 46).isActive = true
+            return s
+        }
+        let keyStack = UIStackView(arrangedSubviews: [row(btnFocus, btnGrid), row(btnMark, btnGeo), row(btnBloom, btnShare)])
+        keyStack.axis = .vertical
+        keyStack.spacing = 8
+        keyStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(keyStack)
+        NSLayoutConstraint.activate([
+            keyStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            keyStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14),
+        ])
+
+        statusLabel = UILabel()
+        statusLabel.font = .systemFont(ofSize: 9, weight: .regular)
+        statusLabel.textColor = UIColor(white: 1, alpha: 0.42)
+        statusLabel.numberOfLines = 2
+        statusLabel.textAlignment = .center
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(statusLabel)
+        NSLayoutConstraint.activate([
+            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            statusLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -18),
+            statusLabel.widthAnchor.constraint(equalToConstant: 128),
+        ])
+
+        // 升 / 降
+        let up = makeIconButton("chevron.up", point: 12)
+        let down = makeIconButton("chevron.down", point: 12)
+        up.addTarget(self, action: #selector(onLiftUp), for: .touchUpInside)
+        down.addTarget(self, action: #selector(onLiftDown), for: .touchUpInside)
+        view.addSubview(up); view.addSubview(down)
+        NSLayoutConstraint.activate([
+            up.leadingAnchor.constraint(equalTo: joystick.trailingAnchor, constant: 8),
+            up.bottomAnchor.constraint(equalTo: joystick.centerYAnchor, constant: -2),
+            up.widthAnchor.constraint(equalToConstant: 34), up.heightAnchor.constraint(equalToConstant: 34),
+            down.leadingAnchor.constraint(equalTo: up.leadingAnchor),
+            down.topAnchor.constraint(equalTo: up.bottomAnchor, constant: 6),
+            down.widthAnchor.constraint(equalToConstant: 34), down.heightAnchor.constraint(equalToConstant: 34),
+        ])
+
+        buildLevelSheet()
+        rebuildRightPanel()
+        refreshButtons()
         syncTitle()
     }
 
-    private func makeSwitch(_ action: Selector) -> UISwitch {
-        let sw = UISwitch()
-        sw.onTintColor = accent
-        sw.translatesAutoresizingMaskIntoConstraints = false
-        sw.addTarget(self, action: action, for: .valueChanged)
-        return sw
+    private func makePanel() -> UIView {
+        let v = UIView()
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.backgroundColor = cardBG
+        v.layer.cornerRadius = 22
+        v.layer.cornerCurve = .continuous
+        v.layer.borderWidth = 1
+        v.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
+        return v
     }
 
-    private func makeRow(_ title: String, _ sw: UISwitch) -> UIView {
-        let l = UILabel()
-        l.text = title
-        l.textColor = UIColor(white: 1, alpha: 0.9)
-        l.font = .systemFont(ofSize: 13, weight: .regular)
-        let row = UIStackView(arrangedSubviews: [l, sw])
-        row.axis = .horizontal
-        row.alignment = .center
-        row.distribution = .equalSpacing
-        row.heightAnchor.constraint(equalToConstant: 30).isActive = true
-        return row
+    private func makeScrollStack(in panel: UIView) -> UIStackView {
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.showsVerticalScrollIndicator = false
+        panel.addSubview(scroll)
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 14),
+            scroll.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -14),
+            scroll.topAnchor.constraint(equalTo: panel.topAnchor, constant: 14),
+            scroll.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -14),
+        ])
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 7
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+        ])
+        return stack
+    }
+
+    private func makePillButton(_ title: String, filled: Bool) -> UIButton {
+        let b = UIButton(type: .system)
+        b.setTitle(title, for: .normal)
+        b.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
+        b.layer.cornerRadius = 15
+        b.layer.cornerCurve = .continuous
+        b.contentEdgeInsets = UIEdgeInsets(top: 0, left: 13, bottom: 0, right: 13)
+        b.setTitleColor(.white, for: .normal)
+        b.backgroundColor = filled ? accent : UIColor(white: 1, alpha: 0.10)
+        b.layer.borderWidth = filled ? 0 : 1
+        b.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
+        b.translatesAutoresizingMaskIntoConstraints = false
+        return b
+    }
+
+    private func makeIconButton(_ symbol: String, point: CGFloat) -> UIButton {
+        let b = UIButton(type: .system)
+        b.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: point, weight: .semibold)), for: .normal)
+        b.tintColor = UIColor(white: 1, alpha: 0.92)
+        b.backgroundColor = UIColor(white: 1, alpha: 0.10)
+        b.layer.cornerRadius = 17
+        b.layer.cornerCurve = .continuous
+        b.layer.borderWidth = 1
+        b.layer.borderColor = UIColor(white: 1, alpha: 0.08).cgColor
+        b.translatesAutoresizingMaskIntoConstraints = false
+        return b
+    }
+
+    private func syncTitle() {
+        levelButton?.setTitle(levelNames[cur] + "  ▾", for: .normal)
+    }
+
+    // MARK: - 面板内容
+
+    private func rebuildLeftPanel() {
+        leftStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let head = UIStackView()
+        head.axis = .horizontal
+        let t = UILabel(); t.text = "场景对象"; t.font = .systemFont(ofSize: 14, weight: .bold); t.textColor = .white
+        let badge = UILabel(); badge.text = "\(renderer?.sceneClasses.reduce(0) { $0 + $1.count } ?? 0)"
+        badge.font = .systemFont(ofSize: 10, weight: .semibold); badge.textColor = dim
+        badge.textAlignment = .right
+        head.addArrangedSubview(t); head.addArrangedSubview(badge)
+        leftStack.addArrangedSubview(head)
+
+        let mat = UILabel()
+        mat.text = materialSummary()
+        mat.font = .systemFont(ofSize: 9.5); mat.textColor = dim
+        mat.numberOfLines = 2
+        leftStack.addArrangedSubview(mat)
+        leftStack.addArrangedSubview(hairline())
+
+        guard let classes = renderer?.sceneClasses, !classes.isEmpty else {
+            let e = UILabel(); e.text = "该关卡暂无对象数据"; e.font = .systemFont(ofSize: 11); e.textColor = dim
+            leftStack.addArrangedSubview(e)
+            return
+        }
+        for (i, c) in classes.enumerated() {
+            let b = UIButton(type: .system)
+            b.contentHorizontalAlignment = .left
+            b.setTitle("\(c.name)    \(c.count)", for: .normal)
+            b.titleLabel?.font = .systemFont(ofSize: 11.5, weight: .medium)
+            b.setTitleColor(UIColor(white: 1, alpha: 0.86), for: .normal)
+            b.tag = i
+            b.addTarget(self, action: #selector(onClassTap(_:)), for: .touchUpInside)
+            b.heightAnchor.constraint(equalToConstant: 26).isActive = true
+            leftStack.addArrangedSubview(b)
+            if i == expandedClass {
+                for it in c.items.prefix(60) {
+                    let ib = UIButton(type: .system)
+                    ib.contentHorizontalAlignment = .left
+                    ib.setTitle("· " + it.name, for: .normal)
+                    ib.titleLabel?.font = .systemFont(ofSize: 10)
+                    ib.setTitleColor(UIColor(white: 1, alpha: 0.55), for: .normal)
+                    ib.tag = i
+                    ib.accessibilityHint = it.name
+                    ib.addTarget(self, action: #selector(onItemTap(_:)), for: .touchUpInside)
+                    ib.heightAnchor.constraint(equalToConstant: 22).isActive = true
+                    leftStack.addArrangedSubview(ib)
+                }
+            }
+        }
+    }
+
+    private func rebuildRightPanel() {
+        rightStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let head = UIStackView()
+        head.axis = .horizontal
+        let t = UILabel(); t.text = "环境"; t.font = .systemFont(ofSize: 14, weight: .bold); t.textColor = .white
+        let badge = UILabel(); badge.text = "Ambience"; badge.font = .systemFont(ofSize: 10, weight: .medium); badge.textColor = dim
+        badge.textAlignment = .right
+        head.addArrangedSubview(t); head.addArrangedSubview(badge)
+        rightStack.addArrangedSubview(head)
+
+        slMix = makeSlider(0, 1, 0.15, #selector(onMix))
+        slElev = makeSlider(-5, 90, 55, #selector(onElev))
+        slAzim = makeSlider(-180, 180, 145, #selector(onAzim))
+        slFog = makeSlider(0, 0.06, 0.004, #selector(onFog))
+
+        valMix = valueLabel("0.15"); valElev = valueLabel("55°"); valAzim = valueLabel("145°"); valFog = valueLabel("0.004")
+        rightStack.addArrangedSubview(sliderRow("昼 → 黄昏", slMix, valMix))
+        rightStack.addArrangedSubview(sliderRow("太阳高度", slElev, valElev))
+        rightStack.addArrangedSubview(sliderRow("太阳方位", slAzim, valAzim))
+        rightStack.addArrangedSubview(sliderRow("雾密度", slFog, valFog))
+
+        envReadout = UILabel()
+        envReadout.font = .systemFont(ofSize: 9.5)
+        envReadout.textColor = dim
+        envReadout.numberOfLines = 2
+        updateEnvReadout()
+        rightStack.addArrangedSubview(envReadout)
+        rightStack.addArrangedSubview(hairline())
+
+        let shHead = UIStackView()
+        shHead.axis = .horizontal
+        let st = UILabel(); st.text = "原版着色器"; st.font = .systemFont(ofSize: 12, weight: .bold); st.textColor = .white
+        let sc = UILabel(); sc.text = "\(shaderNames().count)"; sc.font = .systemFont(ofSize: 10); sc.textColor = dim
+        sc.textAlignment = .right
+        shHead.addArrangedSubview(st); shHead.addArrangedSubview(sc)
+        rightStack.addArrangedSubview(shHead)
+        let note = UILabel(); note.text = "清单来自本关材质表"; note.font = .systemFont(ofSize: 9); note.textColor = dim
+        rightStack.addArrangedSubview(note)
+        for n in shaderNames().prefix(60) {
+            let l = UILabel(); l.text = "\(n)    预览"; l.font = .systemFont(ofSize: 10); l.textColor = UIColor(white: 1, alpha: 0.62)
+            rightStack.addArrangedSubview(l)
+        }
     }
 
     private func hairline() -> UIView {
-        let v = UIView()
-        v.backgroundColor = UIColor(white: 1, alpha: 0.07)
+        let v = UIView(); v.backgroundColor = UIColor(white: 1, alpha: 0.07)
         v.heightAnchor.constraint(equalToConstant: 1).isActive = true
         return v
     }
 
-    private func syncTitle() {
-        guard pill != nil else { return }
-        titleLabel.text = levelNames[cur] + "  ▾"
+    private func valueLabel(_ s: String) -> UILabel {
+        let l = UILabel(); l.text = s; l.font = .systemFont(ofSize: 9.5); l.textColor = dim
+        l.textAlignment = .right
+        l.widthAnchor.constraint(equalToConstant: 54).isActive = true
+        return l
     }
 
-    @objc private func showSheet() {
-        guard !sheetShown else { return }
-        sheetShown = true
+    private func makeSlider(_ minV: Float, _ maxV: Float, _ v: Float, _ action: Selector) -> UISlider {
+        let s = UISlider()
+        s.minimumValue = minV; s.maximumValue = maxV; s.value = v
+        s.minimumTrackTintColor = accent
+        s.maximumTrackTintColor = UIColor(white: 1, alpha: 0.12)
+        s.thumbTintColor = .white
+        s.addTarget(self, action: action, for: .valueChanged)
+        return s
+    }
+
+    private func sliderRow(_ title: String, _ s: UISlider, _ v: UILabel) -> UIStackView {
+        let l = UILabel(); l.text = title; l.font = .systemFont(ofSize: 10.5); l.textColor = UIColor(white: 1, alpha: 0.80)
+        l.widthAnchor.constraint(equalToConstant: 62).isActive = true
+        let row = UIStackView(arrangedSubviews: [l, s, v])
+        row.axis = .horizontal; row.spacing = 8; row.alignment = .center
+        return row
+    }
+
+    private func shaderNames() -> [String] {
+        guard let u = Bundle.main.url(forResource: "\(levelIDs[cur]).materials", withExtension: "json"),
+              let d = try? Data(contentsOf: u),
+              let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return [] }
+        var set = Set<String>()
+        for m in arr { if let s = m["shader"] as? String { set.insert(s) } }
+        return set.sorted()
+    }
+
+    private func materialSummary() -> String {
+        guard let u = Bundle.main.url(forResource: "\(levelIDs[cur]).materials", withExtension: "json"),
+              let d = try? Data(contentsOf: u),
+              let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return "材质 —" }
+        let names = arr.compactMap { $0["shader"] as? String }
+        let first = names.first ?? "—"
+        return "材质 \(first) · \(arr.count) 条 · \(Set(names).count) 种着色器"
+    }
+
+    private func updateStatus() {
+        guard let r = renderer else { return }
+        let objs = r.sceneClasses.reduce(0) { $0 + $1.count }
+        statusLabel.text = "\(levelIDs[cur]) · \(objs) 个对象 · \(r.sceneClasses.count) 个类\n1 块地形 · \(materialSummary())"
+    }
+
+    private func updateEnvReadout() {
+        guard envReadout != nil else { return }
+        envReadout.text = String(format: "太阳 %.0f° / %.0f° · 雾 %.3f · 泛光 %@",
+                                 slElev.value, slAzim.value, slFog.value, renderer?.showBloom == true ? "开" : "关")
+    }
+
+    // MARK: - 面板开关
+
+    private func showPanels(any: Bool) {
         scrim.isHidden = false
-        sheet.isHidden = false
-        sheet.transform = CGAffineTransform(translationX: 0, y: 40)
-        sheet.alpha = 0
-        view.bringSubviewToFront(sheet)
-        view.bringSubviewToFront(gear)
-        UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseOut]) {
-            self.scrim.alpha = 1
-            self.sheet.alpha = 1
-            self.sheet.transform = .identity
+        view.bringSubviewToFront(scrim)
+        view.bringSubviewToFront(leftPanel)
+        view.bringSubviewToFront(rightPanel)
+        UIView.animate(withDuration: 0.24) { self.scrim.alpha = 1 }
+    }
+
+    @objc private func toggleLeft() {
+        if leftOpen { closePanels(); return }
+        if rightOpen { closePanels() }
+        leftOpen = true
+        rebuildLeftPanel()
+        showPanels(any: true)
+        leftPanel.transform = CGAffineTransform(translationX: -40, y: 0)
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
+            self.leftPanel.transform = .identity
         }
     }
 
-    @objc private func hideSheet() {
-        guard sheetShown else { return }
-        sheetShown = false
+    @objc private func toggleRight() {
+        if rightOpen { closePanels(); return }
+        if leftOpen { closePanels() }
+        rightOpen = true
+        rebuildRightPanel()
+        showPanels(any: true)
+        rightPanel.transform = CGAffineTransform(translationX: 40, y: 0)
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseOut]) {
+            self.rightPanel.transform = .identity
+        }
+    }
+
+    @objc private func closePanels() {
+        guard leftOpen || rightOpen else { return }
+        leftOpen = false; rightOpen = false
         UIView.animate(withDuration: 0.2, animations: {
             self.scrim.alpha = 0
-            self.sheet.alpha = 0
-            self.sheet.transform = CGAffineTransform(translationX: 0, y: 40)
+            self.leftPanel.transform = CGAffineTransform(translationX: -40, y: 0)
+            self.rightPanel.transform = CGAffineTransform(translationX: 40, y: 0)
         }) { _ in
             self.scrim.isHidden = true
-            self.sheet.isHidden = true
+            self.leftPanel.transform = .identity
+            self.rightPanel.transform = .identity
         }
     }
 
-    private func makeChip(_ title: String) -> UIButton {
-        let b = UIButton(type: .system)
-        b.setTitle(title, for: .normal)
-        b.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
-        b.layer.cornerRadius = 9
-        b.layer.cornerCurve = .continuous
-        b.contentEdgeInsets = UIEdgeInsets(top: 5, left: 11, bottom: 5, right: 11)
-        b.setContentHuggingPriority(.required, for: .horizontal)
-        b.heightAnchor.constraint(equalToConstant: 30).isActive = true
-        b.backgroundColor = chipOff
-        b.setTitleColor(UIColor(white: 1, alpha: 0.75), for: .normal)
-        return b
+    // MARK: - 关卡选择
+
+    private func buildLevelSheet() {
+        levelSheet = makePanel()
+        levelSheet.isHidden = true
+        view.addSubview(levelSheet)
+        NSLayoutConstraint.activate([
+            levelSheet.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            levelSheet.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            levelSheet.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+        ])
+        let stack = UIStackView()
+        stack.axis = .vertical; stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        levelSheet.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: levelSheet.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: levelSheet.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: levelSheet.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: levelSheet.bottomAnchor, constant: -16),
+        ])
+        let grab = UIView(); grab.backgroundColor = UIColor(white: 1, alpha: 0.22)
+        grab.layer.cornerRadius = 2; grab.translatesAutoresizingMaskIntoConstraints = false
+        levelSheet.addSubview(grab)
+        NSLayoutConstraint.activate([
+            grab.centerXAnchor.constraint(equalTo: levelSheet.centerXAnchor),
+            grab.topAnchor.constraint(equalTo: levelSheet.topAnchor, constant: 7),
+            grab.widthAnchor.constraint(equalToConstant: 34), grab.heightAnchor.constraint(equalToConstant: 4),
+        ])
+        let title = UILabel(); title.text = "地图"; title.font = .systemFont(ofSize: 12, weight: .medium); title.textColor = dim
+        stack.addArrangedSubview(title)
+        for rowIdx in 0..<2 {
+            let row = UIStackView(); row.axis = .horizontal; row.spacing = 6
+            for i in (rowIdx * 4)..<min(7, rowIdx * 4 + 4) {
+                let b = UIButton(type: .system)
+                b.setTitle(levelNames[i], for: .normal)
+                b.titleLabel?.font = .systemFont(ofSize: 11.5, weight: .medium)
+                b.layer.cornerRadius = 9; b.layer.cornerCurve = .continuous
+                b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+                b.tag = i
+                b.backgroundColor = i == cur ? accent : chipOff
+                b.setTitleColor(.white, for: .normal)
+                b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
+                b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+                row.addArrangedSubview(b)
+            }
+            row.addArrangedSubview(UIView())
+            stack.addArrangedSubview(row)
+        }
     }
 
-    private func style(_ b: UIButton, on: Bool) {
-        b.backgroundColor = on ? accent : chipOff
-        b.setTitleColor(on ? .white : UIColor(white: 1, alpha: 0.72), for: .normal)
+    @objc private func showLevelSheet() {
+        closePanels()
+        sheetShown = true
+        scrim.isHidden = false
+        view.bringSubviewToFront(scrim)
+        view.bringSubviewToFront(levelSheet)
+        levelSheet.isHidden = false
+        levelSheet.transform = CGAffineTransform(translationX: 0, y: 30)
+        levelSheet.alpha = 0
+        UIView.animate(withDuration: 0.24) {
+            self.scrim.alpha = 1
+            self.levelSheet.alpha = 1
+            self.levelSheet.transform = .identity
+        }
     }
 
-    private func refreshLevelChips() {
-        for (i, b) in levelChips.enumerated() { style(b, on: i == cur) }
+    @objc private func hideLevelSheet() {
+        guard sheetShown else { return }
+        sheetShown = false
+        UIView.animate(withDuration: 0.18, animations: {
+            self.scrim.alpha = 0
+            self.levelSheet.alpha = 0
+        }) { _ in
+            self.levelSheet.isHidden = true
+            self.scrim.isHidden = true
+        }
     }
 
-    private func refreshToggles() {
-        guard let r = renderer, swFog != nil else { return }
-        swFog.setOn(!r.debugSkipFogPost, animated: false)
-        swDome.setOn(!r.debugSkipSkyDome, animated: false)
-        swCloud.setOn(!r.hideCloud, animated: false)
-        swFP.setOn(r.firstPerson, animated: false)
-        swObj.setOn(r.showObjects, animated: false)
+    // MARK: - 交互
+
+    @objc private func onClassTap(_ sender: UIButton) {
+        expandedClass = (expandedClass == sender.tag) ? -1 : sender.tag
+        rebuildLeftPanel()
     }
 
-    /// 当前进程占用，切关时打点，用来判断是不是被内存杀掉
+    @objc private func onItemTap(_ sender: UIButton) {
+        guard let r = renderer, let classes = renderer?.sceneClasses, sender.tag < classes.count else { return }
+        let cls = classes[sender.tag]
+        let name = sender.accessibilityHint ?? ""
+        if let it = cls.items.first(where: { $0.name == name }), it.pos.count >= 3 {
+            selectedPos = SIMD3<Float>(it.pos[0], it.pos[1], it.pos[2])
+            hasSelection = true
+            r.focus(on: selectedPos)
+            hud.text = "已聚焦：\(it.name)"
+        }
+    }
+
+    @objc private func onFocusTap() {
+        guard let r = renderer else { return }
+        if hasSelection {
+            r.focus(on: selectedPos)
+        } else {
+            r.walkPos = SIMD2<Float>(0, 0); r.eyeLift = 0
+            r.az = 2.10; r.el = 0
+        }
+    }
+
+    @objc private func onGridTap() {
+        guard let r = renderer else { return }
+        r.showGrid.toggle(); refreshButtons()
+    }
+
+    @objc private func onMarkTap() {
+        guard let r = renderer else { return }
+        r.showMarkers.toggle(); refreshButtons()
+    }
+
+    @objc private func onGeoTap() {
+        guard let r = renderer else { return }
+        r.geoRenderMode = (r.geoRenderMode + 1) % 3
+        hud.text = ["原版材质", "参考材质", "点云"][r.geoRenderMode]
+        refreshButtons()
+    }
+
+    @objc private func onBloomTap() {
+        guard let r = renderer else { return }
+        r.showBloom.toggle(); refreshButtons(); updateEnvReadout()
+    }
+
+    @objc private func onLiftUp() { renderer?.eyeLift = min(120, (renderer?.eyeLift ?? 0) + 1.2) }
+    @objc private func onLiftDown() { renderer?.eyeLift = max(-40, (renderer?.eyeLift ?? 0) - 1.2) }
+
+    private func refreshButtons() {
+        guard let r = renderer, btnGrid != nil else { return }
+        let on = UIColor(red: 0.31, green: 0.55, blue: 0.98, alpha: 0.85)
+        btnGrid.backgroundColor = r.showGrid ? on : UIColor(white: 1, alpha: 0.10)
+        btnMark.backgroundColor = r.showMarkers ? on : UIColor(white: 1, alpha: 0.10)
+        btnBloom.backgroundColor = r.showBloom ? on : UIColor(white: 1, alpha: 0.10)
+        btnGeo.backgroundColor = UIColor(white: 1, alpha: 0.10)
+        let icons = ["cube", "square.stack.3d.up", "circle.grid.3x3"]
+        btnGeo.setImage(UIImage(systemName: icons[min(2, r.geoRenderMode)],
+                                withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)), for: .normal)
+    }
+
+    @objc private func onMix() { renderer?.daylightMix = slMix.value; valMix.text = String(format: "%.2f", slMix.value); updateEnvReadout() }
+    @objc private func onElev() { renderer?.sunElev = slElev.value; valElev.text = String(format: "%.0f°", slElev.value); updateEnvReadout() }
+    @objc private func onAzim() { renderer?.sunAzim = slAzim.value; valAzim.text = String(format: "%.0f°", slAzim.value); updateEnvReadout() }
+    @objc private func onFog() { renderer?.fogDensity = slFog.value; valFog.text = String(format: "%.3f", slFog.value); updateEnvReadout() }
+
+    @objc private func onExport() {
+        guard let url = renderer?.exportGeo() else { hud.text = "导出失败"; return }
+        let ac = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        ac.popoverPresentationController?.sourceView = exportButton
+        present(ac, animated: true)
+        hud.text = "已导出 \(url.lastPathComponent)"
+    }
+
+    @objc private func onLevelTap(_ sender: UIButton) {
+        let i = sender.tag
+        guard i >= 0, i < levelIDs.count else { return }
+        hideLevelSheet()
+        load(level: levelIDs[i], index: i)
+    }
+
+    @objc private func onReset() {
+        guard let r = renderer else { return }
+        r.az = 2.10; r.el = 0; r.zoom = 1.0
+        r.walkPos = SIMD2<Float>(0, 0); r.eyeLift = 0
+        hasSelection = false
+    }
+
+    @objc private func onPinch(_ g: UIPinchGestureRecognizer) {
+        guard let r = renderer else { return }
+        r.zoom = min(6.0, max(0.2, r.zoom / Float(g.scale)))
+        g.scale = 1
+    }
+
+    @objc private func onPan(_ g: UIPanGestureRecognizer) {
+        guard let r = renderer else { return }
+        let t = g.translation(in: view3d)
+        let s = Float(t.x) * 0.03, f = Float(t.y) * 0.03
+        let dx = -sin(r.az), dz = cos(r.az)
+        r.walkPos.x += cos(r.az) * s + dx * f
+        r.walkPos.y += -sin(r.az) * s + dz * f
+        g.setTranslation(.zero, in: view3d)
+    }
+
+    // MARK: - 加载 / 渲染
+
     private func memMB() -> Int {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
@@ -405,36 +844,23 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     }
 
     private func load(level: String, index: Int) {
-        if loading {
-            Boot.log("忽略重复切换 \(level)（上一关还在建）")
-            return
-        }
-        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else {
-            hud.text = "Assets 缺失"; return
-        }
+        if loading { return }
+        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else { hud.text = "Assets 缺失"; return }
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("\(level).terrain.bin").path) else {
             hud.text = "\(level) 无地形数据"
-            Boot.log("切换被拦：缺 \(level).terrain.bin")
             return
         }
-
         cur = index
-        refreshLevelChips()
         syncTitle()
-        hideSheet()
+        closePanels()
         hud.text = "加载中…"
         loading = true
-
-        // 先把旧渲染器停掉、等 GPU 把在飞的命令跑完再释放：Metal 资源还在被 command buffer 引用时释放会直接把进程打死
-        Boot.log("切换 → \(level) 内存=\(memMB())MB")
         view3d.isPaused = true
         let old = renderer
         renderer = nil
         view3d.renderer = nil
         old?.retire()
-        Boot.log("旧渲染器已退役 内存=\(memMB())MB")
 
-        // 建渲染器放后台，主线程不再阻塞（阻塞超过 20s 会被系统 watchdog 直接掐掉，也没有崩溃日志）
         DispatchQueue.global(qos: .userInitiated).async {
             var nr: MetalRenderer?
             autoreleasepool { nr = MetalRenderer(level: level) }
@@ -443,101 +869,32 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                 self.view3d.renderer = nr
                 self.view3d.isPaused = false
                 self.loading = false
-                Boot.log("切换完成 \(level) ok=\(nr != nil) 内存=\(self.memMB())MB drawable=\(Int(self.view3d.drawableSize.width))×\(Int(self.view3d.drawableSize.height))")
-                guard let nr else {
-                    self.hud.text = "初始化失败"
-                    return
-                }
-                nr.exposureGain = Float(pow(10.0, Double(self.expoSlider.value)))
-                var text = nr.stats
+                guard let nr else { self.hud.text = "初始化失败"; return }
+                nr.sunElev = self.slElev?.value ?? 55
+                nr.sunAzim = self.slAzim?.value ?? 145
+                nr.fogDensity = self.slFog?.value ?? 0.004
+                nr.daylightMix = self.slMix?.value ?? 0.15
+                self.rebuildLeftPanel()
+                self.rebuildRightPanel()
+                self.refreshButtons()
+                self.updateStatus()
+                var text = "v13 · " + nr.stats
                 if let err = nr.lastError { text = "加载失败：" + err }
-                if !self.pendingPrevLog.isEmpty {
-                    text += " · 上次断在 " + self.pendingPrevLog
-                    self.pendingPrevLog = ""
-                }
-                self.hud.text = "v12 · " + text
-                self.refreshToggles()
-                self.syncTitle()
+                if !self.pendingPrevLog.isEmpty { text += " · 上次断在 " + self.pendingPrevLog; self.pendingPrevLog = "" }
+                self.hud.text = text
+                Boot.log("切换完成 \(level) ok=\(nr != nil) 内存=\(self.memMB())MB drawable=\(Int(self.view3d.drawableSize.width))×\(Int(self.view3d.drawableSize.height))")
             }
         }
     }
 
-    @objc private func onLevelTap(_ sender: UIButton) {
-        let i = sender.tag
-        guard i >= 0, i < levelIDs.count else { return }
-        load(level: levelIDs[i], index: i)
-    }
-
-    @objc private func onReset() {
-        guard let r = renderer else { return }
-        r.az = 2.10; r.el = r.firstPerson ? 0 : 0.28; r.zoom = 1.0; r.targetShift = SIMD2<Float>(0, 0)
-        r.exposureGain = 1.0
-        expoSlider.value = 0.0          // 10^0.88 ≈ 7.6×，烛窟平均亮度 0.018 的可用档位
-        expoLabel.text = "曝光 ×1.00"
-    }
-
-    @objc private func onSwitchFog(_ sw: UISwitch) {
-        renderer?.debugSkipFogPost = !sw.isOn
-    }
-
-    @objc private func onSwitchDome(_ sw: UISwitch) {
-        renderer?.debugSkipSkyDome = !sw.isOn
-    }
-
-    @objc private func onSwitchCloud(_ sw: UISwitch) {
-        renderer?.hideCloud = !sw.isOn
-    }
-
-    @objc private func onSwitchObj(_ sw: UISwitch) {
-        renderer?.showObjects = sw.isOn
-    }
-
-    @objc private func onSwitchFP(_ sw: UISwitch) {
-        guard let r = renderer else { return }
-        r.firstPerson = sw.isOn
-        r.el = 0
-        r.targetShift = SIMD2<Float>(0, 0)
-    }
-
-    @objc private func onExposure() {
-        let gain = Float(pow(10.0, Double(expoSlider.value)))
-        renderer?.exposureGain = gain
-        expoLabel.text = String(format: "曝光 ×%.2f", gain)
-    }
-
-    @objc private func onPinch(_ g: UIPinchGestureRecognizer) {
-        guard let r = renderer else { return }
-        r.zoom = min(6.0, max(0.2, r.zoom / Float(g.scale)))
-        g.scale = 1
-    }
-
-    @objc private func onPan(_ g: UIPanGestureRecognizer) {
-        guard let r = renderer else { return }
-        let t = g.translation(in: view3d)
-        let k: Float = r.firstPerson ? 0.06 : 0.02
-        let s = Float(t.x) * k, f = Float(t.y) * k
-        if r.firstPerson {
-            // 地面视角：两指平移 = 沿相机朝向水平移动（前推/横移），和游戏里走位一致
-            let dx = -sin(r.az), dz = cos(r.az)
-            r.targetShift.x += (cos(r.az) * s + dx * f)
-            r.targetShift.y += (-sin(r.az) * s + dz * f)
-        } else {
-            r.targetShift.x -= s
-            r.targetShift.y -= f
-        }
-        g.setTranslation(.zero, in: view3d)
-    }
-
     // MARK: - MTKViewDelegate
+
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
     func draw(in view: MTKView) {
         guard let r = renderer else { return }
         r.draw(in: view)
-        if !Boot.framed {
-            Boot.framed = true
-            Boot.log("first frame ok")
-        }
+        if !Boot.framed { Boot.framed = true; Boot.log("first frame ok") }
         if let err = r.lastError, (hud.text ?? "").hasPrefix("加载失败") != true {
             hud.text = "加载失败：" + err
         }

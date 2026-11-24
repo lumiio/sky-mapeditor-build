@@ -6407,25 +6407,89 @@ fragment float4 domeFadeFS(DomeOut in [[stage_in]],
   return float4(0.0, 0.0, 0.0, 0.0);
 }
 
-// ===== 几何验证管线（geo.bin：pos f3 | nrm f3 | rgba u8x4，28B）=====
-struct GeoVIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 col [[attribute(2)]]; };
-struct GeoOut { float4 pos [[position]]; float3 nrm; float3 col; };
 
-vertex GeoOut geoVS(GeoVIn in [[stage_in]], constant float4x4 &vp [[buffer(1)]]) {
+// ===== 几何 / 编辑器管线（geo.bin：pos f3 | nrm f3 | rgba u8x4，28B）=====
+struct GeoVIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 col [[attribute(2)]]; };
+struct GeoOut { float4 pos [[position]]; float3 nrm; float3 col; float3 world; float psize [[point_size]]; };
+
+struct GeoU {
+    float4x4 vp;
+    float4 sunDir;
+    float4 sunColor;
+    float4 camPos;
+    float4 fog;       // x=密度, yzw=颜色
+    float4 misc;      // x=渲染模式 0 材质 / 1 参考材质 / 2 点云
+    float4 ambient;
+};
+
+vertex GeoOut geoVS(GeoVIn in [[stage_in]], constant GeoU &u [[buffer(1)]]) {
     GeoOut o;
-    o.pos = vp * float4(in.pos, 1.0);
+    o.pos = u.vp * float4(in.pos, 1.0);
     o.nrm = in.nrm;
     o.col = in.col.rgb;
+    o.world = in.pos;
+    o.psize = 2.0;
     return o;
 }
 
-fragment float4 geoFS(GeoOut in [[stage_in]]) {
+fragment float4 geoFS(GeoOut in [[stage_in]], constant GeoU &u [[buffer(1)]]) {
+    int mode = int(u.misc.x + 0.5);
+    float3 base = in.col;
+    if (mode == 1) base = float3(0.62, 0.60, 0.56);
     float3 n = normalize(in.nrm);
-    float3 L1 = normalize(float3(0.42, 0.86, 0.28));
+    if (mode == 2) {
+        return float4(clamp(base * 1.15 + 0.04, 0.0, 1.0), 1.0);
+    }
     float3 L2 = normalize(float3(-0.48, 0.30, -0.62));
-    float key = max(dot(n, L1), 0.0);
+    float key = max(dot(n, normalize(u.sunDir.xyz)), 0.0);
     float fill = max(dot(n, L2), 0.0);
-    float up = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-    float3 c = in.col * (0.30 + 0.52 * key + 0.22 * fill) + float3(0.015, 0.020, 0.024) * up;
+    float3 c = base * (u.ambient.rgb + u.sunColor.rgb * key * 0.85 + fill * 0.22);
+    float dist = length(in.world - u.camPos.xyz);
+    float f = 1.0 - exp(-u.fog.x * max(dist - 2.0, 0.0));
+    c = mix(c, u.fog.yzw, clamp(f, 0.0, 0.85));
+    return float4(c, 1.0);
+}
+
+struct LineOut { float4 pos [[position]]; float4 col; };
+vertex LineOut lineVS(GeoVIn in [[stage_in]], constant float4x4 &vp [[buffer(1)]]) {
+    LineOut o; o.pos = vp * float4(in.pos, 1.0); o.col = float4(in.col.rgb, in.col.a); return o;
+}
+fragment float4 lineFS(LineOut in [[stage_in]]) { return in.col; }
+
+// ---- 全屏后期（泛光 + 合成）----
+struct QOut { float4 pos [[position]]; float2 uv; };
+vertex QOut geoQuadVS(uint vid [[vertex_id]]) {
+    float2 p = float2((vid == 1) ? 3.0 : -1.0, (vid == 2) ? 3.0 : -1.0);
+    QOut o; o.pos = float4(p, 0.0, 1.0); o.uv = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5); return o;
+}
+
+fragment float4 geoBrightFS(QOut in [[stage_in]], texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]]) {
+    float3 c = src.sample(smp, in.uv).rgb;
+    float l = dot(c, float3(0.2126, 0.7152, 0.0722));
+    float k = max(l - 0.72, 0.0) / max(l, 1e-4);
+    return float4(c * k * 0.9, 1.0);
+}
+
+fragment float4 geoBlurFS(QOut in [[stage_in]], texture2d<float> src [[texture(0)]], sampler smp [[sampler(0)]],
+                          constant float4 &dir [[buffer(1)]]) {
+    const float w0 = 0.227027, w1 = 0.1945946, w2 = 0.1216216, w3 = 0.054054, w4 = 0.016216;
+    float2 d = dir.xy;
+    float3 c = src.sample(smp, in.uv).rgb * w0;
+    c += src.sample(smp, in.uv + d * 1.3846).rgb * w1;
+    c += src.sample(smp, in.uv - d * 1.3846).rgb * w1;
+    c += src.sample(smp, in.uv + d * 3.2308).rgb * w2;
+    c += src.sample(smp, in.uv - d * 3.2308).rgb * w2;
+    c += src.sample(smp, in.uv + d * 5.0769).rgb * w3;
+    c += src.sample(smp, in.uv - d * 5.0769).rgb * w3;
+    c += src.sample(smp, in.uv + d * 6.9231).rgb * w4;
+    c += src.sample(smp, in.uv - d * 6.9231).rgb * w4;
+    return float4(c, 1.0);
+}
+
+fragment float4 geoCompositeFS(QOut in [[stage_in]], texture2d<float> scene [[texture(0)]],
+                               texture2d<float> bloom [[texture(1)]], sampler smp [[sampler(0)]],
+                               constant float4 &p [[buffer(1)]]) {
+    float3 c = scene.sample(smp, in.uv).rgb;
+    if (p.x > 0.0) { c += bloom.sample(smp, in.uv).rgb * p.x; }
     return float4(c, 1.0);
 }

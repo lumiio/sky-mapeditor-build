@@ -2,6 +2,7 @@ import Foundation
 import Metal
 import MetalKit
 import UIKit
+import QuartzCore
 import simd
 
 
@@ -184,6 +185,19 @@ struct WaterUniforms {
     var uvOffC: simd_float4
 }
 
+struct SceneItem: Codable { let name: String; let type: String; let pos: [Float]; let order: Int?; let material: String? }
+struct SceneClass: Codable { let name: String; let count: Int; let items: [SceneItem] }
+
+struct GeoU {
+    var vp: simd_float4x4 = matrix_identity_float4x4
+    var sunDir: SIMD4<Float> = SIMD4<Float>(0.3, 0.9, 0.2, 1)
+    var sunColor: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1)
+    var camPos: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 1)
+    var fog: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
+    var misc: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
+    var ambient: SIMD4<Float> = SIMD4<Float>(0.3, 0.34, 0.4, 1)
+}
+
 struct RangeDesc: Decodable {
     let start: Int; let count: Int; let name: String
     let material: Int?; let color: [Float]; let texture: String?; let texture2: String?
@@ -256,6 +270,32 @@ final class MetalRenderer {
     private var geoRadius: Float = 10
     /// 几何验证模式：先绕过原版材质/雾/后期，只用整关几何 + 三光，确认模型和机位是对的
     var geoMode = true
+
+    // ---- 编辑器（对齐 web 版 SKY 地图编辑器）----
+    private(set) var sceneClasses: [SceneClass] = []
+    private var gridVB: MTLBuffer?
+    private var markerVB: MTLBuffer?
+    private var gridVertCount = 0
+    private var markerVertCount = 0
+    private var geoBrightPipe: MTLRenderPipelineState?
+    private var geoBlurPipe: MTLRenderPipelineState?
+    private var geoCompositePipe: MTLRenderPipelineState?
+    private var linePipe: MTLRenderPipelineState?
+    private var geoBloomA: MTLTexture?
+    private var geoBloomB: MTLTexture?
+
+    var moveInput = SIMD2<Float>(0, 0)
+    var walkPos = SIMD2<Float>(0, 0)
+    var eyeLift: Float = 0
+    private var lastGeoTime = CACurrentMediaTime()
+    var sunElev: Float = 55
+    var sunAzim: Float = 145
+    var daylightMix: Float = 0.15
+    var fogDensity: Float = 0.004
+    var geoRenderMode: Int = 0
+    var showGrid = false
+    var showMarkers = true
+    var showBloom = false
     // 32×16 屏幕光簇（原版 Mesh2243.frag 的 u_light* 通道）
     private var countsTex: MTLTexture?
     private var offsetsTex: MTLTexture?
@@ -598,6 +638,94 @@ final class MetalRenderer {
         waterVB = wv.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!, length: $0.count, options: .storageModeShared) }
         waterIB = widx.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress ?? UnsafeRawPointer(bitPattern: 1)!, length: $0.count, options: .storageModeShared) }
         _ = widx.count
+        buildEditorExtras(root: root, level: level)
+    }
+
+    /// 场景对象 / 地面网格 / 对象标记（对齐 web 版编辑器的左侧对象树与黄色路径）
+    private func buildEditorExtras(root: URL, level: String) {
+        sceneClasses = []
+        gridVB = nil; markerVB = nil; gridVertCount = 0; markerVertCount = 0
+        guard let d = try? Data(contentsOf: root.appendingPathComponent("\(level).scene.json")),
+              let cs = try? JSONDecoder().decode([SceneClass].self, from: d) else { return }
+        sceneClasses = cs
+        let sea = waterY + 0.03
+
+        func lineData(_ verts: [SIMD3<Float>], _ colors: [(UInt8, UInt8, UInt8)], alpha: UInt8 = 255) -> Data {
+            var out = Data(); out.reserveCapacity(verts.count * 28)
+            for i in 0..<verts.count {
+                let f: [Float] = [verts[i].x, verts[i].y, verts[i].z, 0, 0, 0]
+                f.withUnsafeBytes { raw in out.append(contentsOf: raw) }
+                let c = colors[min(i, colors.count - 1)]
+                out.append(contentsOf: [c.0, c.1, c.2, alpha])
+            }
+            return out
+        }
+
+        // 地面网格：以 focus 为中心，2 m 一格
+        var gv: [SIMD3<Float>] = []
+        let ext = min(max(radius * 1.4, 16), 90)
+        var g = -ext
+        while g <= ext {
+            gv.append(SIMD3<Float>(center.x + g, sea, center.z - ext))
+            gv.append(SIMD3<Float>(center.x + g, sea, center.z + ext))
+            gv.append(SIMD3<Float>(center.x - ext, sea, center.z + g))
+            gv.append(SIMD3<Float>(center.x + ext, sea, center.z + g))
+            g += 2
+        }
+        let gc: [(UInt8, UInt8, UInt8)] = [(120, 126, 130)]
+        if !gv.isEmpty {
+            let data = lineData(gv, gc, alpha: 150)
+            gridVB = data.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!, length: data.count, options: .storageModeShared) }
+            gridVertCount = gv.count
+        }
+
+        // 对象标记：LevelMesh 的十字 + TerrainBlob 的有序路径（黄线）
+        var mv: [SIMD3<Float>] = []
+        var mc: [(UInt8, UInt8, UInt8)] = []
+        for c in cs where c.name == "LevelMesh" {
+            for it in c.items.prefix(220) {
+                guard it.pos.count >= 3 else { continue }
+                let p = SIMD3<Float>(it.pos[0], it.pos[1], it.pos[2])
+                let s: Float = 0.35
+                mv.append(p + SIMD3<Float>(-s, 0, 0)); mv.append(p + SIMD3<Float>(s, 0, 0))
+                mv.append(p + SIMD3<Float>(0, -s, 0)); mv.append(p + SIMD3<Float>(0, s, 0))
+                mv.append(p + SIMD3<Float>(0, 0, -s)); mv.append(p + SIMD3<Float>(0, 0, s))
+                for _ in 0..<6 { mc.append((255, 210, 110)) }
+            }
+        }
+        for c in cs where c.name == "TerrainBlob" {
+            let sorted = c.items.sorted { ($0.order ?? 0) < ($1.order ?? 0) }
+            guard sorted.count >= 2 else { continue }
+            var poly: [SIMD3<Float>] = []
+            for it in sorted where it.pos.count >= 3 {
+                poly.append(SIMD3<Float>(it.pos[0], it.pos[1], it.pos[2]))
+            }
+            guard poly.count >= 2 else { continue }
+            for i in 0..<(poly.count - 1) {
+                mv.append(poly[i]); mv.append(poly[i + 1])
+                mc.append((214, 188, 92)); mc.append((214, 188, 92))
+            }
+        }
+        if !mv.isEmpty {
+            let data = lineData(mv, mc)
+            markerVB = data.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!, length: data.count, options: .storageModeShared) }
+            markerVertCount = mv.count
+        }
+        Boot.log("编辑器数据 \(cs.count) 类 / 网格线 \(gridVertCount) / 标记线 \(markerVertCount)")
+    }
+
+    func focus(on p: SIMD3<Float>) {
+        walkPos = SIMD2<Float>(p.x - center.x, p.z - center.z)
+        eyeLift = min(120, max(-40, p.y - (waterY + 1.7)))
+    }
+
+    /// 导出当前关卡的整关几何（web 版「导出 bin」）
+    func exportGeo() -> URL? {
+        guard let src = Bundle.main.url(forResource: levelName, withExtension: "geo.bin", subdirectory: "Assets") else { return nil }
+        let dst = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("\(levelName)-editor.geo.bin")
+        try? FileManager.default.removeItem(at: dst)
+        do { try FileManager.default.copyItem(at: src, to: dst); return dst } catch { Boot.log("导出失败 \(error)"); return nil }
     }
 
     /// 照 web/js/viewer.js 的 updateLightClusters 移植：把 Level 的 PointLight 分进 32×16 屏幕格
@@ -747,6 +875,12 @@ final class MetalRenderer {
         let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: w, height: h, mipmapped: false)
         dd.usage = [.renderTarget, .shaderRead]
         depthTex = device.makeTexture(descriptor: dd)
+        let bw = max(1, w / 4), bh = max(1, h / 4)
+        let bd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: bw, height: bh, mipmapped: false)
+        bd.usage = [.renderTarget, .shaderRead]
+        bd.storageMode = .private
+        geoBloomA = device.makeTexture(descriptor: bd)
+        geoBloomB = device.makeTexture(descriptor: bd)
     }
 
     /// 切关前调用：往同一个命令队列塞一个空命令缓冲并等它完成。
@@ -758,56 +892,152 @@ final class MetalRenderer {
         cb?.waitUntilCompleted()
     }
 
-    /// 几何验证渲染：一份整关几何 + 三光，直接画到 drawable，不经过雾/穹顶/tonemap。
+    private func buildGeoPipelines() {
+        guard geoCompositePipe == nil else { return }
+        let vd = MTLVertexDescriptor()
+        vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 0
+        vd.attributes[1].format = .float3; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 0
+        vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 0
+        vd.layouts[0].stride = 28
+        vd.layouts[0].stepFunction = .perVertex
+        vd.layouts[0].stepRate = 1
+        func makePipe(_ v: String, _ f: String, _ fmt: MTLPixelFormat, blend: Bool = false) -> MTLRenderPipelineState? {
+            let pd = MTLRenderPipelineDescriptor()
+            pd.vertexFunction = library.makeFunction(name: v)
+            pd.fragmentFunction = library.makeFunction(name: f)
+            pd.vertexDescriptor = (v == "geoQuadVS") ? nil : vd
+            pd.colorAttachments[0].pixelFormat = fmt
+            pd.depthAttachmentPixelFormat = (v == "geoQuadVS") ? .invalid : .depth32Float
+            if blend, let ca = pd.colorAttachments[0] {
+                ca.isBlendingEnabled = true
+                ca.rgbBlendOperation = .add; ca.alphaBlendOperation = .add
+                ca.sourceRGBBlendFactor = .sourceAlpha; ca.destinationRGBBlendFactor = .oneMinusSourceAlpha
+                ca.sourceAlphaBlendFactor = .sourceAlpha; ca.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            }
+            return try? device.makeRenderPipelineState(descriptor: pd)
+        }
+        geoPipe = makePipe("geoVS", "geoFS", .rgba16Float)
+        linePipe = makePipe("lineVS", "lineFS", .rgba16Float, blend: true)
+        geoBrightPipe = makePipe("geoQuadVS", "geoBrightFS", .rgba16Float)
+        geoBlurPipe = makePipe("geoQuadVS", "geoBlurFS", .rgba16Float)
+        geoCompositePipe = makePipe("geoQuadVS", "geoCompositeFS", .bgra8Unorm_srgb)
+        Boot.log("GEO 管线 geo=\(geoPipe != nil) line=\(linePipe != nil) bloom=\(geoBrightPipe != nil && geoBlurPipe != nil) comp=\(geoCompositePipe != nil)")
+    }
+
+    /// 整关几何 + 编辑器叠加层（网格/标记），可选泛光，最后一次合成到 drawable。
     private func drawGeo(_ view: MTKView, _ w: Int, _ h: Int) {
         guard let drawable = view.currentDrawable, let geoVB, let geoIB, geoIC > 0 else { return }
-        if geoPipe == nil {
-            let vd = MTLVertexDescriptor()
-            vd.attributes[0].format = .float3; vd.attributes[0].offset = 0;  vd.attributes[0].bufferIndex = 0
-            vd.attributes[1].format = .float3; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 0
-            vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 0
-            vd.layouts[0].stride = 28
-            vd.layouts[0].stepFunction = .perVertex
-            vd.layouts[0].stepRate = 1
-            let pd = MTLRenderPipelineDescriptor()
-            pd.vertexFunction = library.makeFunction(name: "geoVS")
-            pd.fragmentFunction = library.makeFunction(name: "geoFS")
-            pd.vertexDescriptor = vd
-            pd.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
-            pd.depthAttachmentPixelFormat = .depth32Float
-            geoPipe = try? device.makeRenderPipelineState(descriptor: pd)
-            Boot.log("GEO 管线 \(geoPipe != nil ? "ok" : "失败")")
-        }
-        guard let pipe = geoPipe else { return }
+        buildGeoPipelines()
         ensureTargets(w, h)
-        guard let depth = depthTex else { return }
+        guard let geoPipe, let linePipe, let compositePipe, let sceneTex, let depthTex else { return }
+
+        let now = CACurrentMediaTime()
+        let dt = min(0.05, max(0.001, now - lastGeoTime))
+        lastGeoTime = now
+        if abs(moveInput.x) > 0.001 || abs(moveInput.y) > 0.001 {
+            let fwd = SIMD2<Float>(cos(az), sin(az))
+            let right = SIMD2<Float>(-sin(az), cos(az))
+            walkPos += (fwd * moveInput.y + right * moveInput.x) * (3.4 * dt)
+            walkPos.x = min(80, max(-80, walkPos.x))
+            walkPos.y = min(80, max(-80, walkPos.y))
+        }
 
         let sea = man?.seaLevel ?? waterY
-        let eye = SIMD3<Float>(center.x + targetShift.x, sea + 1.7, center.z + targetShift.y)
+        let eye = SIMD3<Float>(center.x + walkPos.x, sea + 1.7 + eyeLift, center.z + walkPos.y)
         let dir = SIMD3<Float>(cos(el) * cos(az), sin(el), cos(el) * sin(az))
         let proj = perspective(min(100, max(25, 55 * zoom)) * Float.pi / 180, Float(w) / Float(h), 0.08, 1500)
         let vm = lookAt(eye, eye + dir, SIMD3<Float>(0, 1, 0))
         let vp = proj * vm
 
+        let warm = min(1, max(0, daylightMix))
+        let sunEl = sunElev * Float.pi / 180, sunAz = sunAzim * Float.pi / 180
+        let sd = SIMD3<Float>(cos(sunEl) * cos(sunAz), sin(sunEl), cos(sunEl) * sin(sunAz))
+        let sc = SIMD3<Float>(1, 0.96, 0.90) * (1 - warm) + SIMD3<Float>(1, 0.62, 0.34) * warm
+        let fogCol = SIMD3<Float>(0.62, 0.72, 0.78) * (1 - warm) + SIMD3<Float>(0.72, 0.56, 0.48) * warm
+        var u = GeoU()
+        u.vp = vp
+        u.sunDir = SIMD4<Float>(sd.x, sd.y, sd.z, 1)
+        u.sunColor = SIMD4<Float>(sc.x, sc.y, sc.z, 1)
+        u.camPos = SIMD4<Float>(eye.x, eye.y, eye.z, 1)
+        u.fog = SIMD4<Float>(fogDensity, fogCol.x, fogCol.y, fogCol.z)
+        u.misc = SIMD4<Float>(Float(geoRenderMode), 0, 0, showBloom ? 0.9 : 0)
+        u.ambient = SIMD4<Float>(0.30 * (1 - warm) + 0.26 * warm,
+                                0.34 * (1 - warm) + 0.24 * warm,
+                                0.40 * (1 - warm) + 0.26 * warm, 1)
+
+        guard let cb = queue.makeCommandBuffer() else { return }
         let rp = MTLRenderPassDescriptor()
-        rp.colorAttachments[0].texture = drawable.texture
+        rp.colorAttachments[0].texture = sceneTex
         rp.colorAttachments[0].loadAction = .clear
         rp.colorAttachments[0].storeAction = .store
-        rp.colorAttachments[0].clearColor = MTLClearColor(red: 0.06, green: 0.075, blue: 0.075, alpha: 1)
-        rp.depthAttachment.texture = depth
+        rp.colorAttachments[0].clearColor = MTLClearColor(red: Double(fogCol.x) * 0.35, green: Double(fogCol.y) * 0.35,
+                                                          blue: Double(fogCol.z) * 0.35, alpha: 1)
+        rp.depthAttachment.texture = depthTex
         rp.depthAttachment.loadAction = .clear
         rp.depthAttachment.clearDepth = 1.0
         rp.depthAttachment.storeAction = .dontCare
-
-        guard let cb = queue.makeCommandBuffer(), let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
-        enc.setRenderPipelineState(pipe)
+        guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
+        enc.setRenderPipelineState(geoPipe)
         enc.setDepthStencilState(depthState)
         enc.setCullMode(.none)
         enc.setVertexBuffer(geoVB, offset: 0, index: 0)
+        var uCopy = u
+        enc.setVertexBytes(&uCopy, length: MemoryLayout<GeoU>.stride, index: 1)
+        enc.setFragmentBytes(&uCopy, length: MemoryLayout<GeoU>.stride, index: 1)
+        if geoRenderMode == 2 {
+            enc.drawIndexedPrimitives(type: .point, indexCount: geoIC, indexType: .uint32, indexBuffer: geoIB, indexBufferOffset: 0)
+        } else {
+            enc.drawIndexedPrimitives(type: .triangle, indexCount: geoIC, indexType: .uint32, indexBuffer: geoIB, indexBufferOffset: 0)
+        }
+        enc.setRenderPipelineState(linePipe)
         var vpCopy = vp
         enc.setVertexBytes(&vpCopy, length: MemoryLayout<simd_float4x4>.size, index: 1)
-        enc.drawIndexedPrimitives(type: .triangle, indexCount: geoIC, indexType: .uint32, indexBuffer: geoIB, indexBufferOffset: 0)
+        if showGrid, let gridVB, gridVertCount > 0 {
+            enc.setVertexBuffer(gridVB, offset: 0, index: 0)
+            enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: gridVertCount)
+        }
+        if showMarkers, let markerVB, markerVertCount > 0 {
+            enc.setVertexBuffer(markerVB, offset: 0, index: 0)
+            enc.drawPrimitives(type: .line, vertexStart: 0, vertexCount: markerVertCount)
+        }
         enc.endEncoding()
+
+        if showBloom, let brightPipe = geoBrightPipe, let blurPipe = geoBlurPipe,
+           let a = geoBloomA, let b = geoBloomB, let smp = clampSampler {
+            func pass(_ pipe: MTLRenderPipelineState, _ target: MTLTexture, _ src: MTLTexture,
+                      _ bytes: UnsafeRawPointer?, _ len: Int) {
+                let prp = MTLRenderPassDescriptor()
+                prp.colorAttachments[0].texture = target
+                prp.colorAttachments[0].loadAction = .dontCare
+                prp.colorAttachments[0].storeAction = .store
+                guard let e = cb.makeRenderCommandEncoder(descriptor: prp) else { return }
+                e.setRenderPipelineState(pipe)
+                e.setFragmentTexture(src, index: 0)
+                e.setFragmentSamplerState(smp, index: 0)
+                if let bytes, len > 0 { e.setFragmentBytes(bytes, length: len, index: 1) }
+                e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                e.endEncoding()
+            }
+            pass(brightPipe, a, sceneTex, nil, 0)
+            var dx = SIMD4<Float>(1.0 / Float(a.width), 0, 0, 0)
+            pass(blurPipe, b, a, &dx, MemoryLayout<SIMD4<Float>>.size)
+            var dy = SIMD4<Float>(0, 1.0 / Float(b.height), 0, 0)
+            pass(blurPipe, a, b, &dy, MemoryLayout<SIMD4<Float>>.size)
+        }
+
+        let crp = MTLRenderPassDescriptor()
+        crp.colorAttachments[0].texture = drawable.texture
+        crp.colorAttachments[0].loadAction = .dontCare
+        crp.colorAttachments[0].storeAction = .store
+        guard let ce = cb.makeRenderCommandEncoder(descriptor: crp) else { return }
+        ce.setRenderPipelineState(compositePipe)
+        ce.setFragmentTexture(sceneTex, index: 0)
+        ce.setFragmentTexture(showBloom ? (geoBloomA ?? blackTex) : blackTex, index: 1)
+        if let smp = clampSampler { ce.setFragmentSamplerState(smp, index: 0) }
+        var bp = SIMD4<Float>(showBloom ? 1.0 : 0, 0, 0, 1)
+        ce.setFragmentBytes(&bp, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
+        ce.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        ce.endEncoding()
         cb.present(drawable)
         cb.commit()
         if frameIdx < 2 {
