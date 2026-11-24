@@ -995,7 +995,7 @@ final class MetalRenderer {
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
         enc.setRenderPipelineState(geoPipe)
         enc.setDepthStencilState(depthState)
-        enc.setCullMode(.none)
+        enc.setCullMode(.back)
         enc.setVertexBuffer(geoVB, offset: 0, index: 0)
         var uCopy = u
         enc.setVertexBytes(&uCopy, length: MemoryLayout<GeoU>.stride, index: 1)
