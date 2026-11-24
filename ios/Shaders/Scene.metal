@@ -6436,7 +6436,15 @@ vertex GeoOut geoVS(GeoVIn in [[stage_in]], constant GeoU &u [[buffer(1)]]) {
 fragment float4 geoFS(GeoOut in [[stage_in]], constant GeoU &u [[buffer(1)]]) {
     int mode = int(u.misc.x + 0.5);
     if (mode == 3) {
-        return float4(pow(in.baked, float3(2.2)), 1.0);
+        // 与 APK server.cjs 的 Hf() 编辑器 basic 着色器逐行对齐：
+        // tint = u_color * a_color; lighting = .55 + .45*|n.y|/|n|
+        float3 n = normalize(in.nrm);
+        float lighting = 0.55 + 0.45 * abs(n.y) / max(length(in.nrm), 0.00001);
+        float3 c = in.col * lighting;
+        float dist = length(in.world - u.camPos.xyz);
+        float f = 1.0 - exp(-u.fog.x * max(dist - 2.0, 0.0));
+        c = mix(c, u.fog.yzw, clamp(f, 0.0, 0.35));
+        return float4(c, 1.0);
     }
     float3 base = in.col;
     if (mode == 1) base = float3(0.62, 0.60, 0.56);
