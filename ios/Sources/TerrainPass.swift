@@ -299,10 +299,14 @@ final class TerrainPass {
             let vd = MTLVertexDescriptor()
             vd.attributes[0].format = .float3; vd.attributes[0].offset = 0; vd.attributes[0].bufferIndex = 1
             vd.attributes[1].format = .char4Normalized; vd.attributes[1].offset = 12; vd.attributes[1].bufferIndex = 1
-            vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 24; vd.attributes[2].bufferIndex = 1
-            vd.attributes[3].format = .uchar4Normalized; vd.attributes[3].offset = 28; vd.attributes[3].bufferIndex = 1
-            vd.attributes[4].format = .uchar4Normalized; vd.attributes[4].offset = 32; vd.attributes[4].bufferIndex = 1
-            vd.attributes[5].format = .uchar4Normalized; vd.attributes[5].offset = 20; vd.attributes[5].bufferIndex = 1
+            // 按 vs IR 的 air.vertex_input：loc2 a_light0 / loc3 a_light1 / loc4 a_light2 / loc5 a_color。
+            // GEO0 顶点实际顺序是 material_ids@16 | material_weights@20 | v_color@24 | gi_light@28，
+            // 之前把 v_color 给了 a_light0、把 weights 给了 a_color，fs 里用 a_color.w 做 alpha 裁剪
+            // （weights.w 常为 0）→ 绝大多数片元被丢弃，只剩零散碎块。
+            vd.attributes[2].format = .uchar4Normalized; vd.attributes[2].offset = 16; vd.attributes[2].bufferIndex = 1
+            vd.attributes[3].format = .uchar4Normalized; vd.attributes[3].offset = 20; vd.attributes[3].bufferIndex = 1
+            vd.attributes[4].format = .uchar4Normalized; vd.attributes[4].offset = 24; vd.attributes[4].bufferIndex = 1
+            vd.attributes[5].format = .uchar4Normalized; vd.attributes[5].offset = 28; vd.attributes[5].bufferIndex = 1
             vd.layouts[1].stride = 36
             vd.layouts[1].stepFunction = .perVertex
             vd.layouts[1].stepRate = 1

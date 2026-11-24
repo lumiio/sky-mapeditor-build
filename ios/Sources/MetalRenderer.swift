@@ -316,7 +316,7 @@ final class MetalRenderer {
     private var objIB: MTLBuffer?
     private var objRanges: [RangeDesc] = []
     /// 道具默认关：先把白块来源隔离出来（地形/穹顶/道具三路）
-    var showObjects = false
+    var showObjects = true
     private var beamoVB: MTLBuffer?
     private var beamoIB: MTLBuffer?
     private var ibuf: MTLBuffer?
@@ -355,7 +355,7 @@ final class MetalRenderer {
     private let debugSkipWater = true
     /// 穹顶开关：DomePass 用原版 SkyDomeFade metallib + 原版 UnitSphere.mesh（半径 1.0）；
     /// 管线或网格任一缺失时 DomePass 自身返回 nil，这里再兜一层，绝不发非法 draw（非法 draw 会让整个 command buffer 作废）
-    var debugSkipSkyDome = false
+    var debugSkipSkyDome = true
     /// 诊断开关：真机雾管线输出恒为「1.0」(=亮度 0)，会把整帧乘黑；先让 tonemap 直读场景色，
     /// 用亮度图确认场景本身有没有内容，再回来修雾。仅诊断期打开，日志会写明。
     var debugSkipFogPost = true
