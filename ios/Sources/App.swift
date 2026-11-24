@@ -444,7 +444,8 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         let head = UIStackView()
         head.axis = .horizontal
         let t = UILabel(); t.text = "场景对象"; t.font = .systemFont(ofSize: 14, weight: .bold); t.textColor = .white
-        let badge = UILabel(); badge.text = "\(renderer?.sceneClasses.reduce(0) { $0 + $1.count } ?? 0)"
+        let totalObjects = renderer?.sceneClasses.reduce(0) { $0 + $1.count } ?? 0
+        let badge = UILabel(); badge.text = "\(totalObjects)"
         badge.font = .systemFont(ofSize: 10, weight: .semibold); badge.textColor = dim
         badge.textAlignment = .right
         head.addArrangedSubview(t); head.addArrangedSubview(badge)
