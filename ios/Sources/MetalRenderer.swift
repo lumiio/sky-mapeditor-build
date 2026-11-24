@@ -1310,6 +1310,7 @@ final class MetalRenderer {
             pf.u_averageProbeColor = (averageSky.x, averageSky.y, averageSky.z, 1)
             pf.u_probeCenter = (eye.x, eye.y, eye.z, 1)
             terrain.hideCloud = hideCloud
+            enc.setCullMode(.none)   // 洞内看闭合地形壳，背面剔除会把整面墙剔光
             terrain.encode(enc, perFrame: &pf, perPass: SIMD4<Float>(skyP.u_viewportSize.0, skyP.u_viewportSize.1, 1 / Float(w), 1 / Float(h)))
             enc.setRenderPipelineState(meshPipe)
         }
