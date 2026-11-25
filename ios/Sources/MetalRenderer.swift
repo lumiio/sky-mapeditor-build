@@ -188,6 +188,11 @@ struct WaterUniforms {
 struct SceneItem: Codable { let name: String; let type: String; let pos: [Float]; let order: Int?; let material: String? }
 struct SceneClass: Codable { let name: String; let count: Int; let items: [SceneItem] }
 
+struct MObjU {
+    var vp: simd_float4x4 = matrix_identity_float4x4
+    var color: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1)
+    var camFog: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
+}
 struct GeoMatU {
     var vp: simd_float4x4 = matrix_identity_float4x4
     var color: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1)
@@ -279,6 +284,7 @@ final class MetalRenderer {
     private var geoMatRanges: [GeoMatRange] = []
     private var geoMatIC = 0
     private var geoMatPipe: MTLRenderPipelineState?
+    private var mobjPipe: MTLRenderPipelineState?
     private var matColors: [Int: SIMD3<Float>] = [:]
     private var geoCenter = SIMD3<Float>(0, 0, 0)
     private var geoRadius: Float = 10
@@ -1004,6 +1010,21 @@ final class MetalRenderer {
             pd.depthAttachmentPixelFormat = .depth32Float
             geoMatPipe = try? device.makeRenderPipelineState(descriptor: pd)
         }
+        // LevelMesh 72B：pos@0 / nrm@12 / a_color@24（其余 uv/light 本基本分支不用）
+        let ovd = MTLVertexDescriptor()
+        ovd.attributes[0].format = .float3; ovd.attributes[0].offset = 0;  ovd.attributes[0].bufferIndex = 0
+        ovd.attributes[1].format = .float3; ovd.attributes[1].offset = 12; ovd.attributes[1].bufferIndex = 0
+        ovd.attributes[2].format = .uchar4Normalized; ovd.attributes[2].offset = 24; ovd.attributes[2].bufferIndex = 0
+        ovd.layouts[0].stride = 72
+        ovd.layouts[0].stepFunction = .perVertex
+        ovd.layouts[0].stepRate = 1
+        if let vf = library.makeFunction(name: "mobjVS"), let ff = library.makeFunction(name: "mobjFS") {
+            let pd = MTLRenderPipelineDescriptor()
+            pd.vertexFunction = vf; pd.fragmentFunction = ff; pd.vertexDescriptor = ovd
+            pd.colorAttachments[0].pixelFormat = .rgba16Float
+            pd.depthAttachmentPixelFormat = .depth32Float
+            mobjPipe = try? device.makeRenderPipelineState(descriptor: pd)
+        }
         geoBrightPipe = makePipe("geoQuadVS", "geoBrightFS", .rgba16Float)
         geoBlurPipe = makePipe("geoQuadVS", "geoBlurFS", .rgba16Float)
         geoCompositePipe = makePipe("geoQuadVS", "geoCompositeFS", .bgra8Unorm_srgb)
@@ -1084,6 +1105,23 @@ final class MetalRenderer {
                 enc.setFragmentBytes(&mu, length: MemoryLayout<GeoMatU>.stride, index: 1)
                 enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
                                           indexBuffer: mi, indexBufferOffset: r.start * 4)
+            }
+            // LevelMesh 道具：编辑器 basic 的模型分支，u_color * a_color
+            if showObjects, let op = mobjPipe, let ov = objVB, let oi = objIB, !objRanges.isEmpty {
+                enc.setRenderPipelineState(op)
+                enc.setVertexBuffer(ov, offset: 0, index: 0)
+                for r in objRanges {
+                    guard r.count > 0 else { continue }
+                    var mu = MObjU()
+                    mu.vp = vp
+                    let c = r.color.count >= 3 ? SIMD3<Float>(r.color[0], r.color[1], r.color[2]) : SIMD3<Float>(0.8, 0.8, 0.8)
+                    mu.color = SIMD4<Float>(c.x, c.y, c.z, 1)
+                    mu.camFog = SIMD4<Float>(eye.x, eye.y, eye.z, fogDensity)
+                    enc.setVertexBytes(&mu, length: MemoryLayout<MObjU>.stride, index: 1)
+                    enc.setFragmentBytes(&mu, length: MemoryLayout<MObjU>.stride, index: 1)
+                    enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
+                                              indexBuffer: oi, indexBufferOffset: r.start * 4)
+                }
             }
         } else {
             enc.setRenderPipelineState(geoPipe)

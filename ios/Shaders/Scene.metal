@@ -6557,3 +6557,28 @@ fragment float4 geoMatFS(GeoMatOut in [[stage_in]], constant GeoMatU &u [[buffer
     c = mix(c, float3(0.62, 0.72, 0.78), clamp(f, 0.0, 0.35));
     return float4(c, 1.0);
 }
+
+// ===== 编辑器 basic 的 LevelMesh 分支：u_color * a_color（72B 原版 Mesh 顶点）=====
+struct MObjVIn { float3 pos [[attribute(0)]]; float3 nrm [[attribute(1)]]; float4 col [[attribute(2)]]; };
+struct MObjOut { float4 pos [[position]]; float3 nrm; float3 col; float3 world; };
+struct MObjU { float4x4 vp; float4 color; float4 camFog; };
+
+vertex MObjOut mobjVS(MObjVIn in [[stage_in]], constant MObjU &u [[buffer(1)]]) {
+    MObjOut o;
+    o.pos = u.vp * float4(in.pos, 1.0);
+    o.nrm = in.nrm;
+    o.col = u.color.rgb * in.col.rgb;
+    o.world = in.pos;
+    return o;
+}
+
+fragment float4 mobjFS(MObjOut in [[stage_in]], constant MObjU &u [[buffer(1)]]) {
+    if (in.col.r + in.col.g + in.col.b <= 0.0001) discard_fragment();
+    float3 n = normalize(in.nrm);
+    float lighting = 0.55 + 0.45 * abs(n.y) / max(length(in.nrm), 0.00001);
+    float3 c = in.col * lighting;
+    float dist = length(in.world - u.camFog.xyz);
+    float f = 1.0 - exp(-u.camFog.w * max(dist - 2.0, 0.0));
+    c = mix(c, float3(0.62, 0.72, 0.78), clamp(f, 0.0, 0.35));
+    return float4(c, 1.0);
+}
