@@ -1072,8 +1072,8 @@ final class MetalRenderer {
                 guard r.count > 0, r.start >= 0, r.start + r.count <= geoMatIC else { continue }
                 var mu = GeoMatU()
                 mu.vp = vp
-                // 编辑器 basic 的 u_color 默认白，tint 由逐顶点 a_color 提供
-                mu.color = SIMD4<Float>(1, 1, 1, 1)
+                let cc = matColors[r.material] ?? SIMD3<Float>(1, 1, 1)
+                mu.color = SIMD4<Float>(cc.x, cc.y, cc.z, 1)
                 mu.camFog = SIMD4<Float>(eye.x, eye.y, eye.z, fogDensity)
                 mu.misc = SIMD4<Float>(Float(r.material), 0, 0, 0)
                 enc.setVertexBytes(&mu, length: MemoryLayout<GeoMatU>.stride, index: 1)
