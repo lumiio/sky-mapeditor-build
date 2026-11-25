@@ -294,7 +294,7 @@ final class MetalRenderer {
     var daylightMix: Float = 0.15
     var fogDensity: Float = 0.004
     var geoRenderMode: Int = 3
-    var useGeo = false           // 默认原版材质链，几何预览才切
+    var useGeo = true            // 默认与 Android 编辑器一致：BstBaked 整关 + basic 着色
     var showGrid = false
     var showMarkers = false
     var showBloom = false

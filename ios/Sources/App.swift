@@ -771,7 +771,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         if !r.useGeo { r.useGeo = true; r.geoRenderMode = 0 }
         else if r.geoRenderMode >= 3 { r.useGeo = false }
         else { r.geoRenderMode += 1 }
-        hud.text = r.useGeo ? ["原版材质", "参考材质", "点云", "烘焙光"][r.geoRenderMode] : "原版材质（原版贴图）"
+        hud.text = r.useGeo ? ["原版材质", "参考材质", "点云", "编辑器 Basic"][r.geoRenderMode] : "原版材质（原版贴图）"
         refreshButtons()
     }
 
@@ -886,7 +886,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
                 self.rebuildRightPanel()
                 self.refreshButtons()
                 self.updateStatus()
-                var text = "v24 · 原版贴图 · " + nr.stats
+                var text = "v25 · 编辑器 Basic · " + nr.stats
                 if let err = nr.lastError { text = "加载失败：" + err }
                 if !self.pendingPrevLog.isEmpty { text += " · 上次断在 " + self.pendingPrevLog; self.pendingPrevLog = "" }
                 self.hud.text = text

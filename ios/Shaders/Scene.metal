@@ -6440,7 +6440,7 @@ fragment float4 geoFS(GeoOut in [[stage_in]], constant GeoU &u [[buffer(1)]]) {
         // tint = u_color * a_color; lighting = .55 + .45*|n.y|/|n|
         float3 n = normalize(in.nrm);
         float lighting = 0.55 + 0.45 * abs(n.y) / max(length(in.nrm), 0.00001);
-        float3 c = in.col * lighting;
+        float3 c = in.col * in.baked * lighting;
         float dist = length(in.world - u.camPos.xyz);
         float f = 1.0 - exp(-u.fog.x * max(dist - 2.0, 0.0));
         c = mix(c, u.fog.yzw, clamp(f, 0.0, 0.35));
