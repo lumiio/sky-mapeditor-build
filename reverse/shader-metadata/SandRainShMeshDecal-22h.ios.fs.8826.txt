@@ -1,0 +1,1 @@
+air-alias-scopes(fsmain)air-alias-scope-samplersair-alias-scope-texturesair-alias-scope-arg(9)air-alias-scope-arg(8)air-alias-scope-arg(7)omnipotent charSimple C++ TBAA_ZTS17PerObjectUniformsllvm.loop.mustprogress

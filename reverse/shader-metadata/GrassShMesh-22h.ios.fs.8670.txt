@@ -1,0 +1,1 @@
+air-alias-scopes(fsmain)air-alias-scope-arg(11)air-alias-scope-samplersair-alias-scope-texturesair-alias-scope-arg(10)air-alias-scope-arg(9)_ZTS17PerObjectUniformsomnipotent charSimple C++ TBAAllvm.loop.mustprogress

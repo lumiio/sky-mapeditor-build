@@ -323,6 +323,9 @@ final class MetalRenderer {
     private var colData = [Float](repeating: 0, count: 2048 * 4)
 
     private(set) var levelName: String = ""
+    /// 资源根目录：这张图由游戏原始 Data 生成过就在 Documents/Assets，否则在 App 包里。
+    /// `init` 里按关卡名定一次，`assetsURL()` / `tex()` / 地形通道都用它。
+    private var assetsRoot: URL?
     private var man: Manifest?
     private var vbuf: MTLBuffer?
     // LevelMesh 实例打包出来的道具网格（SkyEngine/tools/pack_objects）
@@ -384,6 +387,7 @@ final class MetalRenderer {
 
     init?(level: String) {
         Boot.log("renderer init start level=\(level)")
+        assetsRoot = GameAssets.root(forLevel: level)
         guard let dev = MTLCreateSystemDefaultDevice(), let q = dev.makeCommandQueue() else {
             Boot.log("Metal device 不可用"); return nil
         }
@@ -557,7 +561,7 @@ final class MetalRenderer {
     }
 
     func assetsURL() -> URL? {
-        Bundle.main.url(forResource: "Assets", withExtension: nil)
+        assetsRoot
     }
 
     func load(level: String) {
@@ -783,7 +787,7 @@ final class MetalRenderer {
 
     /// 导出当前关卡的整关几何（web 版「导出 bin」）
     func exportGeo() -> URL? {
-        guard let src = Bundle.main.url(forResource: levelName, withExtension: "geo.bin", subdirectory: "Assets") else { return nil }
+        guard let src = GameAssets.url("\(levelName).geo.bin") else { return nil }
         let dst = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("\(levelName)-editor.geo.bin")
         try? FileManager.default.removeItem(at: dst)

@@ -1,0 +1,2081 @@
+diff --git a/ios/Sources/App.swift b/ios/Sources/App.swift
+index 65aad03..a4adc65 100644
+--- a/ios/Sources/App.swift
++++ b/ios/Sources/App.swift
+@@ -8,6 +8,23 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
+     func application(_ application: UIApplication,
+                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+         Boot.log("didFinishLaunching")
++        // 有游戏原始 Data 时，把它就地转成引擎要的资源。放在后台跑：首次要复制 50MB 静态资源
++        // 并解析 33 张图，占住主线程会被启动看门狗杀掉。转完发通知，界面再把关卡并进列表。
++        if GameAssets.hasGameData() {
++            DispatchQueue.global(qos: .utility).async {
++                guard let report = GameAssets.buildIfNeeded() else { return }
++                Boot.log("原始数据就绪 \(report.summary) 用时 \(Int(report.seconds))s")
++                for failure in report.failed {
++                    Boot.log("生成失败 \(failure.name): \(failure.reason)")
++                }
++                for level in report.skipped {
++                    Boot.log("跳过（无 LVL0 地形）\(level)")
++                }
++                DispatchQueue.main.async {
++                    NotificationCenter.default.post(name: .skyGameAssetsReady, object: nil)
++                }
++            }
++        }
+         let vc = ViewerController()
+         let window = UIWindow(frame: UIScreen.main.bounds)
+         window.rootViewController = vc
+@@ -139,9 +156,11 @@ final class ViewerController: UIViewController, MTKViewDelegate {
+     private var cur = 0
+     private var pendingPrevLog = ""
+ 
+-    private let levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village",
++    private var levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village",
+                             "Dawn_TrialsEarth", "Dawn_TrialsAir", "Night_JarCave", "AR_WheatField"]
+-    private let levelNames = ["烛窟", "蝶原", "草原村", "土试炼", "风试炼", "罐洞", "麦田"]
++    private var levelNames = ["烛窟", "蝶原", "草原村", "土试炼", "风试炼", "罐洞", "麦田"]
++    /// 选关面板里那 4 列网格；关卡列表变化时整块重排。
++    private var levelChipStack: UIStackView?
+ 
+     private let accent = UIColor(red: 0.31, green: 0.55, blue: 0.98, alpha: 1.0)
+     private let cardBG = UIColor(white: 0.055, alpha: 0.98)
+@@ -158,9 +177,68 @@ final class ViewerController: UIViewController, MTKViewDelegate {
+         if !prev.isEmpty && !prev.contains("first frame") {
+             pendingPrevLog = prev.split(separator: "\n").suffix(2).map { String($0.prefix(60)) }.joined(separator: " ← ")
+         }
++        NotificationCenter.default.addObserver(self, selector: #selector(onGameAssetsReady(_:)),
++                                               name: .skyGameAssetsReady, object: nil)
++        mergeGeneratedLevels()
+         load(level: levelIDs[0], index: 0)
+     }
+ 
++    // MARK: - 原始数据关卡
++
++    /// 把 `Documents/Assets` 里生成好的关卡并进选关列表（同名不重复加）。
++    private func mergeGeneratedLevels() {
++        let generated = GameAssets.localLevels().filter { !levelIDs.contains($0) }
++        guard !generated.isEmpty else { return }
++        levelIDs.append(contentsOf: generated)
++        levelNames.append(contentsOf: generated.map { LevelNames.chinese($0) })
++        Boot.log("原始数据关卡 \(generated.count) 张已并入列表，当前 \(levelIDs.count) 张")
++        rebuildLevelChips()
++    }
++
++    @objc private func onGameAssetsReady(_ note: Notification) {
++        mergeGeneratedLevels()
++        hud?.text = "原始数据已就绪：" + GameAssets.localLevels().count.description + " 张可加载"
++    }
++
++    private func makeLevelRow() -> UIStackView {
++        let row = UIStackView()
++        row.axis = .horizontal
++        row.spacing = 6
++        return row
++    }
++
++    private func makeLevelChip(_ index: Int) -> UIButton {
++        let b = UIButton(type: .system)
++        b.setTitle(levelNames[index], for: .normal)
++        b.titleLabel?.font = .systemFont(ofSize: 11.5, weight: .medium)
++        b.layer.cornerRadius = 9
++        b.layer.cornerCurve = .continuous
++        b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
++        b.tag = index
++        b.backgroundColor = index == cur ? accent : chipOff
++        b.setTitleColor(.white, for: .normal)
++        b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
++        b.heightAnchor.constraint(equalToConstant: 30).isActive = true
++        return b
++    }
++
++    /// 选关面板按 4 列一排重排，行数随关卡数增长（放在滚动视图里）。
++    private func rebuildLevelChips() {
++        guard let grid = levelChipStack else { return }
++        for view in grid.arrangedSubviews { view.removeFromSuperview() }
++        var row = makeLevelRow()
++        for index in levelIDs.indices {
++            if row.arrangedSubviews.count == 4 {
++                row.addArrangedSubview(UIView())
++                grid.addArrangedSubview(row)
++                row = makeLevelRow()
++            }
++            row.addArrangedSubview(makeLevelChip(index))
++        }
++        row.addArrangedSubview(UIView())
++        grid.addArrangedSubview(row)
++    }
++
+     // MARK: - 3D 视图
+ 
+     private func setupView() {
+@@ -566,7 +644,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
+     }
+ 
+     private func shaderNames() -> [String] {
+-        guard let u = Bundle.main.url(forResource: "\(levelIDs[cur]).materials", withExtension: "json"),
++        guard let u = GameAssets.url("\(levelIDs[cur]).materials.json"),
+               let d = try? Data(contentsOf: u),
+               let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return [] }
+         var set = Set<String>()
+@@ -575,7 +653,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
+     }
+ 
+     private func materialSummary() -> String {
+-        guard let u = Bundle.main.url(forResource: "\(levelIDs[cur]).materials", withExtension: "json"),
++        guard let u = GameAssets.url("\(levelIDs[cur]).materials.json"),
+               let d = try? Data(contentsOf: u),
+               let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return "材质 —" }
+         let names = arr.compactMap { $0["shader"] as? String }
+@@ -679,24 +757,26 @@ final class ViewerController: UIViewController, MTKViewDelegate {
+         ])
+         let title = UILabel(); title.text = "地图"; title.font = .systemFont(ofSize: 12, weight: .medium); title.textColor = dim
+         stack.addArrangedSubview(title)
+-        for rowIdx in 0..<2 {
+-            let row = UIStackView(); row.axis = .horizontal; row.spacing = 6
+-            for i in (rowIdx * 4)..<min(7, rowIdx * 4 + 4) {
+-                let b = UIButton(type: .system)
+-                b.setTitle(levelNames[i], for: .normal)
+-                b.titleLabel?.font = .systemFont(ofSize: 11.5, weight: .medium)
+-                b.layer.cornerRadius = 9; b.layer.cornerCurve = .continuous
+-                b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+-                b.tag = i
+-                b.backgroundColor = i == cur ? accent : chipOff
+-                b.setTitleColor(.white, for: .normal)
+-                b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
+-                b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+-                row.addArrangedSubview(b)
+-            }
+-            row.addArrangedSubview(UIView())
+-            stack.addArrangedSubview(row)
+-        }
++        // 关卡多到 30 多张，固定两行放不下：改成可滚动的 4 列网格
++        let scroll = UIScrollView()
++        scroll.translatesAutoresizingMaskIntoConstraints = false
++        scroll.showsVerticalScrollIndicator = true
++        scroll.heightAnchor.constraint(lessThanOrEqualToConstant: 208).isActive = true
++        let grid = UIStackView()
++        grid.axis = .vertical
++        grid.spacing = 6
++        grid.translatesAutoresizingMaskIntoConstraints = false
++        scroll.addSubview(grid)
++        NSLayoutConstraint.activate([
++            grid.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
++            grid.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
++            grid.topAnchor.constraint(equalTo: scroll.topAnchor),
++            grid.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
++            grid.widthAnchor.constraint(equalTo: scroll.widthAnchor),
++        ])
++        stack.addArrangedSubview(scroll)
++        levelChipStack = grid
++        rebuildLevelChips()
+     }
+ 
+     @objc private func showLevelSheet() {
+@@ -853,7 +933,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
+ 
+     private func load(level: String, index: Int) {
+         if loading { return }
+-        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else { hud.text = "Assets 缺失"; return }
++        guard let root = GameAssets.root(forLevel: level) else { hud.text = "Assets 缺失"; return }
+         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("\(level).terrain.bin").path) else {
+             hud.text = "\(level) 无地形数据"
+             return
+diff --git a/ios/Sources/ByteReader.swift b/ios/Sources/ByteReader.swift
+new file mode 100644
+index 0000000..a3f3f8e
+--- /dev/null
++++ b/ios/Sources/ByteReader.swift
+@@ -0,0 +1,160 @@
++import Foundation
++
++/// Bounds-checked little-endian reader over a `Data` slice.
++///
++/// The original binary formats (TGCL / LVL0 / Terrain) are little-endian and
++/// contain nested, variable-length records, so every read is validated instead
++/// of trusting offsets from the file header.
++enum ByteReadError: Error, CustomStringConvertible {
++    case outOfBounds(offset: Int, need: Int, have: Int)
++    case badMagic(expected: String, got: String, offset: Int)
++    case unterminatedString(offset: Int)
++    case invalid(String)
++
++    var description: String {
++        switch self {
++        case let .outOfBounds(offset, need, have):
++            return "read out of bounds at \(offset): need \(need) byte(s), only \(have) left"
++        case let .badMagic(expected, got, offset):
++            return "bad magic at \(offset): expected \(expected), got \(got)"
++        case let .unterminatedString(offset):
++            return "unterminated C string starting at \(offset)"
++        case let .invalid(message):
++            return "invalid format: \(message)"
++        }
++    }
++}
++
++struct ByteReader {
++    let data: Data
++    private(set) var pos: Int
++
++    init(_ data: Data, pos: Int = 0) {
++        self.data = data
++        self.pos = pos
++    }
++
++    var count: Int { data.count }
++    var remaining: Int { max(0, data.count - pos) }
++    var isAtEnd: Bool { pos >= data.count }
++
++    private mutating func require(_ n: Int) throws {
++        guard n >= 0, pos + n <= data.count else {
++            throw ByteReadError.outOfBounds(offset: pos, need: n, have: remaining)
++        }
++    }
++
++    mutating func seek(to offset: Int) throws {
++        guard offset >= 0, offset <= data.count else {
++            throw ByteReadError.outOfBounds(offset: offset, need: 0, have: data.count)
++        }
++        pos = offset
++    }
++
++    mutating func skip(_ n: Int) throws {
++        try require(n)
++        pos += n
++    }
++
++    mutating func u8() throws -> UInt8 {
++        try require(1)
++        defer { pos += 1 }
++        return data[pos]
++    }
++
++    mutating func u16() throws -> UInt16 {
++        try require(2)
++        defer { pos += 2 }
++        return UInt16(data[pos]) | (UInt16(data[pos + 1]) << 8)
++    }
++
++    mutating func u32() throws -> UInt32 {
++        try require(4)
++        defer { pos += 4 }
++        return UInt32(data[pos])
++            | (UInt32(data[pos + 1]) << 8)
++            | (UInt32(data[pos + 2]) << 16)
++            | (UInt32(data[pos + 3]) << 24)
++    }
++
++    mutating func i32() throws -> Int32 {
++        Int32(bitPattern: try u32())
++    }
++
++    mutating func f32() throws -> Float {
++        Float(bitPattern: try u32())
++    }
++
++    mutating func u32(at offset: Int) throws -> UInt32 {
++        try require(offset - pos)
++        guard offset + 4 <= data.count else {
++            throw ByteReadError.outOfBounds(offset: offset, need: 4, have: data.count - offset)
++        }
++        return UInt32(data[offset])
++            | (UInt32(data[offset + 1]) << 8)
++            | (UInt32(data[offset + 2]) << 16)
++            | (UInt32(data[offset + 3]) << 24)
++    }
++
++    /// Copies `n` bytes starting at the cursor.
++    mutating func bytes(_ n: Int) throws -> Data {
++        try require(n)
++        defer { pos += n }
++        return data.subdata(in: pos..<(pos + n))
++    }
++
++    /// Skips a NUL-terminated string and returns its UTF-8 contents.
++    mutating func cString() throws -> String {
++        let start = pos
++        var end = pos
++        while end < data.count, data[end] != 0 { end += 1 }
++        guard end < data.count else {
++            throw ByteReadError.unterminatedString(offset: start)
++        }
++        pos = end + 1
++        return String(decoding: data[start..<end], as: UTF8.self)
++    }
++
++    /// A u32 byte count followed by that many UTF-8 bytes. This is the string
++    /// encoding inside `BstBaked.meshes` (bake names), and it is *not* the same
++    /// as TGCL's NUL-terminated names.
++    mutating func lengthPrefixedString(limit: Int = 1 << 20) throws -> String {
++        let start = pos
++        let length = Int(try u32())
++        guard length <= limit else {
++            throw ByteReadError.invalid("length-prefixed string claims \(length) bytes at \(start)")
++        }
++        return String(decoding: try bytes(length), as: UTF8.self)
++    }
++
++    /// A stable string for log output.
++    func hex(at offset: Int, length: Int) -> String {
++        guard offset >= 0, offset + length <= data.count else { return "<oob>" }
++        return data.subdata(in: offset..<(offset + length)).map { String(format: "%02X", $0) }.joined()
++    }
++}
++
++/// Small helpers used by the format layer.
++enum FormatUtil {
++    static func fourCC(_ value: UInt32) -> String {
++        let bytes = [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF),
++                     UInt8((value >> 16) & 0xFF), UInt8((value >> 24) & 0xFF)]
++        return String(bytes: bytes, encoding: .ascii) ?? String(format: "%08X", value)
++    }
++
++    static func fourCC(_ value: UInt32, littleEndian: Bool) -> String {
++        littleEndian ? fourCC(value) : fourCC(value.byteSwapped)
++    }
++
++    static func asciiUInt32(_ s: String) -> UInt32 {
++        var result: UInt32 = 0
++        for (i, b) in Array(s.utf8.prefix(4)).enumerated() {
++            result |= UInt32(b) << (8 * i)
++        }
++        return result
++    }
++
++    static func roundUp(_ n: Int, to alignment: Int) -> Int {
++        (n + alignment - 1) / alignment * alignment
++    }
++}
+diff --git a/ios/Sources/GameAssets.swift b/ios/Sources/GameAssets.swift
+new file mode 100644
+index 0000000..74872cd
+--- /dev/null
++++ b/ios/Sources/GameAssets.swift
+@@ -0,0 +1,410 @@
++import Foundation
++
++/// 把游戏原始 `Data` 目录就地转成引擎要的资源。
++///
++/// 以前这条路只能离线走：`native/terrain.mjs`、`export-scene.mjs` 在电脑上把游戏文件
++/// 转成 `<level>.terrain.bin` + `<level>.terrain.meta.json`，再打进 App 包里。现在搬进 App——
++///
++/// 1. 用文件 App 把游戏的 `Data` 目录放进 App 的 `Documents/Data`（Info.plist 已开文件共享）；
++/// 2. 下次启动自动在 `Documents/Assets` 里生成与离线包同格式的文件；
++/// 3. `GameAssets.root` 指向 `Documents/Assets`，引擎其余代码一行都不用改。
++///
++/// 格式来源不是猜的：`BstBaked.meshes` 的解析见 `LVL0.swift`，那是照着编辑器
++/// 0.3.1 自己的实现写的，并在它自带的 33 张图上 33/33 校验过。
++enum GameAssets {
++    /// 生成完成标记。有它就认为 `Documents/Assets` 可用。
++    static let marker = ".game-source"
++    /// 原版地形顶点步长（36 字节，见 `LVL0Document`）。
++    static let vertexStride = 36
++    /// 材质 id 在顶点流里的字节偏移（低字节是主材质）。
++    static let materialByteOffset = 16
++    /// 顶点坐标在顶点流里的偏移。
++    static let positionByteOffset = 0
++
++    static var documents: URL {
++        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents", isDirectory: true)
++    }
++    static var localRoot: URL { documents.appendingPathComponent("Assets", isDirectory: true) }
++    static var gameDataRoot: URL { documents.appendingPathComponent("Data", isDirectory: true) }
++
++    static var bundledRoot: URL? {
++        Bundle.main.url(forResource: "Assets", withExtension: nil)
++    }
++
++    /// 引擎读资源的根目录：生成过就用 `Documents/Assets`，否则退回 App 包里的 `Assets`。
++    static var root: URL? {
++        FileManager.default.fileExists(atPath: localRoot.appendingPathComponent(marker).path)
++            ? localRoot : bundledRoot
++    }
++
++    /// 某一关卡该从哪个根目录读：本地生成过这张图就用 `Documents/Assets`，
++    /// 否则退回 App 包（纯 prefab 关卡例如烛窟只存在于包里）。
++    static func root(forLevel level: String) -> URL? {
++        let fm = FileManager.default
++        if fm.fileExists(atPath: localRoot.appendingPathComponent(marker).path),
++           fm.fileExists(atPath: localRoot.appendingPathComponent("\(level).terrain.bin").path) {
++            return localRoot
++        }
++        return bundledRoot
++    }
++
++    /// 在 `root` 下找一个资源文件；两条路都不存在时返回 nil。
++    static func url(_ relativePath: String) -> URL? {
++        guard let root else { return nil }
++        let candidate = root.appendingPathComponent(relativePath)
++        return FileManager.default.fileExists(atPath: candidate.path) ? candidate : nil
++    }
++
++    // MARK: - 生成结果
++
++    struct Report {
++        var built: [String] = []
++        var skipped: [String] = []
++        var failed: [(name: String, reason: String)] = []
++        var vertices = 0
++        var indices = 0
++        /// 顺带用 TGCL 解析器把每张图的 `Objects.level.bin` 走一遍，验证格式，也留个计数。
++        var tgclLevels = 0
++        var tgclNodes = 0
++        var tgclClasses = 0
++        var seconds: Double = 0
++
++        var summary: String {
++            var line = "原始数据 \(built.count) 张已生成"
++            if !skipped.isEmpty { line += " · \(skipped.count) 张无地形" }
++            if !failed.isEmpty { line += " · \(failed.count) 张失败" }
++            line += " · \(vertices) 顶点 / \(indices / 3) 三角"
++            if tgclLevels > 0 {
++                line += " · TGCL \(tgclLevels) 张 / \(tgclNodes) 节点 / \(tgclClasses) 类"
++            }
++            return line
++        }
++    }
++
++    // MARK: - 探测
++
++    static func hasGameData() -> Bool {
++        FileManager.default.fileExists(atPath: gameDataRoot.appendingPathComponent("Levels").path)
++    }
++
++    /// `Documents/Data/Levels` 下所有带 `BstBaked.meshes` 的目录名。
++    static func mapNamesInGameData() -> [String] {
++        let levels = gameDataRoot.appendingPathComponent("Levels", isDirectory: true)
++        let entries = (try? FileManager.default.contentsOfDirectory(at: levels,
++                                                                   includingPropertiesForKeys: nil,
++                                                                   options: [.skipsHiddenFiles])) ?? []
++        return entries.compactMap { dir -> String? in
++            let meshes = dir.appendingPathComponent("BstBaked.meshes")
++            return FileManager.default.fileExists(atPath: meshes.path) ? dir.lastPathComponent : nil
++        }.sorted()
++    }
++
++    /// 已经生成好的关卡名（`Documents/Assets/*.terrain.bin`）。
++    static func localLevels() -> [String] {
++        let fm = FileManager.default
++        guard fm.fileExists(atPath: localRoot.path) else { return [] }
++        let entries = (try? fm.contentsOfDirectory(at: localRoot, includingPropertiesForKeys: nil,
++                                                   options: [.skipsHiddenFiles])) ?? []
++        let suffix = ".terrain.bin"
++        return entries.compactMap { url -> String? in
++            let name = url.lastPathComponent
++            guard name.hasSuffix(suffix) else { return nil }
++            return String(name.dropLast(suffix.count))
++        }.sorted()
++    }
++
++    /// 首次（或换过数据）才生成，已有标记就跳过。返回 nil 表示没有原始数据可处理。
++    @discardableResult
++    static func buildIfNeeded() -> Report? {
++        guard hasGameData() else { return nil }
++        if FileManager.default.fileExists(atPath: localRoot.appendingPathComponent(marker).path) {
++            return nil
++        }
++        return build()
++    }
++
++    // MARK: - 生成
++
++    static func build() -> Report {
++        let started = Date()
++        let fm = FileManager.default
++        var report = Report()
++
++        do {
++            try fm.createDirectory(at: localRoot, withIntermediateDirectories: true)
++        } catch {
++            report.failed.append(("Assets", "创建目录失败：\(error)"))
++            return report
++        }
++        copyStaticResources()
++
++        for name in mapNamesInGameData() {
++            let mapDir = gameDataRoot.appendingPathComponent("Levels/\(name)", isDirectory: true)
++            let meshesURL = mapDir.appendingPathComponent("BstBaked.meshes")
++
++            // TGCL 只做校验与计数：它不影响地形，坏了也不该拖累出图。
++            if let levelData = try? Data(contentsOf: mapDir.appendingPathComponent("Objects.level.bin")) {
++                do {
++                    let document = try TGCLDocument(data: levelData)
++                    report.tgclLevels += 1
++                    report.tgclNodes += document.nodes.count
++                    report.tgclClasses += document.classes.count
++                } catch {
++                    Boot.log("TGCL 解析失败 \(name): \(error)")
++                }
++            }
++
++            guard let data = try? Data(contentsOf: meshesURL) else {
++                report.failed.append((name, "BstBaked.meshes 读不到"))
++                continue
++            }
++            do {
++                let document = try LVL0Document(data: data)
++                guard document.firstMesh(of: .terrain) != nil else {
++                    // 纯 prefab 关卡（例如烛窟）的地形来自 Objects.level.bin 的 TerrainBlobPrefab，
++                    // 由离线 terrain.mjs 程序化生成，这里没有可直接用的顶点流。
++                    report.skipped.append(name)
++                    continue
++                }
++                let counts = try materialize(level: name, document: document)
++                report.built.append(name)
++                report.vertices += counts.vertices
++                report.indices += counts.indices
++                Boot.log("生成 \(name): \(counts.vertices) 顶点 / \(counts.indices / 3) 三角")
++            } catch {
++                report.failed.append((name, "\(error)"))
++            }
++        }
++
++        if !report.built.isEmpty {
++            try? "\(report.built.count)".write(to: localRoot.appendingPathComponent(marker),
++                                               atomically: true, encoding: .utf8)
++        }
++        report.seconds = Date().timeIntervalSince(started)
++        return report
++    }
++
++    /// 把 App 包里那份静态资源搬过来：贴图、体积云、metallib、材质表。
++    /// 生成出来的 `Documents/Assets` 必须是自洽的，否则引擎换了根目录就找不到贴图。
++    private static func copyStaticResources() {
++        let fm = FileManager.default
++        guard let bundle = bundledRoot else {
++            Boot.log("缺 Assets：无法复制静态资源")
++            return
++        }
++        let destData = localRoot.appendingPathComponent("Data", isDirectory: true)
++        if !fm.fileExists(atPath: destData.path) {
++            let src = bundle.appendingPathComponent("Data", isDirectory: true)
++            if fm.fileExists(atPath: src.path) {
++                do { try fm.copyItem(at: src, to: destData) }
++                catch { Boot.log("复制 Data 失败: \(error)") }
++            } else {
++                Boot.log("App 包里没有 Assets/Data")
++            }
++        }
++        let entries = (try? fm.contentsOfDirectory(at: bundle, includingPropertiesForKeys: nil,
++                                                   options: [.skipsHiddenFiles])) ?? []
++        for src in entries where src.lastPathComponent.hasSuffix(".materials.json") {
++            let dst = localRoot.appendingPathComponent(src.lastPathComponent)
++            if !fm.fileExists(atPath: dst.path) {
++                try? fm.copyItem(at: src, to: dst)
++            }
++        }
++    }
++
++    // MARK: - 单图生成
++
++    /// 把一张图的 LVL0 地形 + 裙边写成引擎现在读的那两样东西：
++    /// `<level>.terrain.bin`（`[u32 顶点数][u32 索引数][顶点×36][索引×u32]`）和
++    /// `<level>.terrain.meta.json`（索引区间按材质分组）。另外补一个纯地形 manifest。
++    @discardableResult
++    private static func materialize(level: String, document: LVL0Document)
++        throws -> (vertices: Int, indices: Int) {
++
++        var vertices = Data()
++        var source: [UInt32] = []
++
++        for kind in [LVL0Document.Kind.terrain, .skirt] {
++            for mesh in document.meshes(of: kind) where mesh.vertexCount > 0 {
++                let raw = document.vertexData(of: mesh)
++                guard raw.count >= mesh.vertexByteCount, mesh.stride >= vertexStride else { continue }
++                let base = UInt32(vertices.count / vertexStride)
++                var offset = 0
++                while offset + vertexStride <= raw.count {
++                    // 裙边 40 字节里的前 36 字节与地形顶点同构，多的 userData1 丢掉。
++                    vertices.append(raw.subdata(in: offset..<(offset + vertexStride)))
++                    offset += mesh.stride
++                }
++                for index in mesh.indices {
++                    source.append(index + base)
++                }
++            }
++        }
++
++        let vertexCount = vertices.count / vertexStride
++        guard vertexCount > 0, source.count >= 3 else {
++            throw ByteReadError.invalid("\(level): 地形没有任何可绘制的三角形")
++        }
++
++        // 按材质把三角形分桶。原版就是一个材质一个批次，这里也保证每个材质一段连续区间，
++        // 免得几百个交替区间变成几百次 draw。
++        var buckets = [[UInt32]](repeating: [], count: 256)
++        var used = [Bool](repeating: false, count: 256)
++        var cursor = 0
++        while cursor + 2 < source.count {
++            let vertex = Int(source[cursor])
++            let byteOffset = vertices.startIndex + vertex * vertexStride + materialByteOffset
++            let material = byteOffset < vertices.endIndex ? Int(vertices[byteOffset]) : 0
++            used[material] = true
++            buckets[material].append(source[cursor])
++            buckets[material].append(source[cursor + 1])
++            buckets[material].append(source[cursor + 2])
++            cursor += 3
++        }
++
++        var indices: [UInt32] = []
++        indices.reserveCapacity(source.count)
++        var ranges: [[String: Any]] = []
++        for material in 0..<256 where used[material] {
++            let bucket = buckets[material]
++            guard !bucket.isEmpty else { continue }
++            ranges.append([
++                "start": indices.count,
++                "count": bucket.count,
++                "material": material,
++                "name": "mat\(material)",
++            ])
++            indices.append(contentsOf: bucket)
++        }
++
++        // 包围盒：引擎的取景和相机都靠它。
++        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
++        var hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
++        var offset = 0
++        while offset + vertexStride <= vertices.count {
++            let p = SIMD3<Float>(readFloat(vertices, offset + positionByteOffset),
++                                 readFloat(vertices, offset + positionByteOffset + 4),
++                                 readFloat(vertices, offset + positionByteOffset + 8))
++            if p.x.isFinite, p.y.isFinite, p.z.isFinite {
++                lo = SIMD3(min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z))
++                hi = SIMD3(max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z))
++            }
++            offset += vertexStride
++        }
++        let bounds: [Float] = [lo.x, lo.y, lo.z, hi.x, hi.y, hi.z]
++
++        // 1) 顶点 + 索引
++        var blob = Data(capacity: 8 + vertices.count + indices.count * 4)
++        appendUInt32(&blob, UInt32(vertexCount))
++        appendUInt32(&blob, UInt32(indices.count))
++        blob.append(vertices)
++        for index in indices { appendUInt32(&blob, index) }
++        let binURL = localRoot.appendingPathComponent("\(level).terrain.bin")
++        try blob.write(to: binURL, options: .atomic)
++
++        // 2) 元数据（引擎按 material 分组选着色器家族）
++        let meta: [String: Any] = [
++            "level": level,
++            "stride": vertexStride,
++            "vertexCount": vertexCount,
++            "indexCount": indices.count,
++            "ranges": ranges,
++        ]
++        let metaURL = localRoot.appendingPathComponent("\(level).terrain.meta.json")
++        try JSONSerialization.data(withJSONObject: meta).write(to: metaURL, options: .atomic)
++
++        // 3) 纯地形 manifest：ranges 留空，引擎就不去找 .verts/.idx
++        let manifest: [String: Any] = [
++            "level": level,
++            "seaLevel": -5.0,
++            "vertices": vertexCount,
++            "indices": indices.count,
++            "stride": vertexStride,
++            "bounds": bounds,
++            "focus": bounds,
++            "ranges": [Any](),
++        ]
++        let manifestURL = localRoot.appendingPathComponent("\(level).json")
++        try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL, options: .atomic)
++
++        // 4) 材质表：原版整关共用一张，缺了就借包内那份，否则状态栏会显示“材质 —”
++        let materialURL = localRoot.appendingPathComponent("\(level).materials.json")
++        if !FileManager.default.fileExists(atPath: materialURL.path) {
++            let fallback = localRoot.appendingPathComponent("CandleSpace.materials.json")
++            if FileManager.default.fileExists(atPath: fallback.path) {
++                try? FileManager.default.copyItem(at: fallback, to: materialURL)
++            }
++        }
++
++        return (vertexCount, indices.count)
++    }
++
++    // MARK: - 小工具
++
++    private static func readFloat(_ data: Data, _ offset: Int) -> Float {
++        guard offset >= 0, offset + 4 <= data.count else { return .nan }
++        let base = data.startIndex + offset
++        let bits = UInt32(data[base]) | (UInt32(data[base + 1]) << 8)
++            | (UInt32(data[base + 2]) << 16) | (UInt32(data[base + 3]) << 24)
++        return Float(bitPattern: bits)
++    }
++
++    private static func appendUInt32(_ data: inout Data, _ value: UInt32) {
++        data.append(UInt8(value & 0xFF))
++        data.append(UInt8((value >> 8) & 0xFF))
++        data.append(UInt8((value >> 16) & 0xFF))
++        data.append(UInt8((value >> 24) & 0xFF))
++    }
++}
++
++extension Notification.Name {
++    /// 游戏原始 `Data` 已经转成引擎资源，界面可以并关卡列表了。
++    static let skyGameAssetsReady = Notification.Name("SkyGameAssetsReady")
++}
++
++/// 关卡中文名。生成出来的关卡没有现成名字，这里补一份；没收录的直接用目录名。
++enum LevelNames {
++    static func chinese(_ id: String) -> String {
++        table[id] ?? id
++    }
++
++    private static let table: [String: String] = [
++        "CandleSpace": "烛窟",
++        "CandleSpaceEnd": "烛窟终章",
++        "CarryLand": "运土",
++        "CarryLand2": "运土 二",
++        "CarryLand3": "运土 三",
++        "Dawn": "黎明",
++        "DayEnd": "白昼终章",
++        "DayHubCave": "白昼洞窟",
++        "Dusk": "黄昏",
++        "DuskGraveyard": "黄昏墓园",
++        "DuskMid": "黄昏中枢",
++        "Dusk_CrabField": "螃蟹田",
++        "HubReveal": "云巢",
++        "Night": "夜",
++        "NightEnd": "夜终章",
++        "NightEntrance": "夜入口",
++        "Prairie_ButterflyFields": "蝶原",
++        "Prairie_Cave": "草原洞窟",
++        "Prairie_NestAndKeeper": "巢与守望者",
++        "Prairie_Village": "草原村",
++        "Rain": "雨林",
++        "RainEnd": "雨林终章",
++        "RainForest": "雨林深处",
++        "RainMid": "雨林中枢",
++        "SkyHub2": "云巢 二",
++        "Storm": "风暴",
++        "StormEnd": "风暴终章",
++        "Sunset": "日落",
++        "SunsetEnd": "日落终章",
++        "SunsetEnd2": "日落终章 二",
++        "SunsetRace": "日落赛道",
++        "TitleWater": "标题水面",
++        "WorldEmpty": "空世界",
++        "Dawn_TrialsAir": "风试炼",
++        "Dawn_TrialsEarth": "土试炼",
++        "Night_JarCave": "罐洞",
++        "AR_WheatField": "麦田",
++    ]
++}
+diff --git a/ios/Sources/LVL0.swift b/ios/Sources/LVL0.swift
+new file mode 100644
+index 0000000..fe4c488
+--- /dev/null
++++ b/ios/Sources/LVL0.swift
+@@ -0,0 +1,491 @@
++import Foundation
++
++/// Reader for `BstBaked.meshes` (magic "LVL0") — one map's baked geometry.
++///
++/// As with `TGCL`, this is no longer inferred: `assets/runtime/server.cjs` in
++/// `com.sky.editor 0.3.1-android-preview` contains the reader, and this file
++/// mirrors it. Two earlier assumptions were wrong and are called out below.
++///
++/// Container:
++///
++///     0    magic "LVL0"
++///     4    version u32       51 or 52
++///     8    sectionCount u8   (≤ 10)
++///     9    3 bytes of padding
++///     12   sectionCount × { tag[4], offset u32, length u32 }
++///
++/// The `LOD0` section is a **bare LZ4 block** — there is no uncompressed-size
++/// word in front of it. (An earlier revision read one and produced garbage.)
++///
++/// Inside the decompressed `LOD0`, in order:
++///
++///   1. bakes: count u32; each { name (u32 length + UTF-8), guid u32,
++///      submeshCount u32, uniform u8 }, each submesh { vertexCount u32,
++///      indexBytes u32, light block (12 bytes when uniform, else
++///      vertexCount × 12), index block (indexBytes) }
++///   2. terrains: count u32; each { linkedId u32, flags u8, bounds 6×f32,
++///      vertexCount u32, indexCount u32, vertices ×36, collision (u32 length +
++///      bytes), gridBounds 6×f32, cellSize f32, dimensions 3×u32,
++///      patchCount u32 + (count, raw) u32 pairs, edgeCount u32,
++///      edgePairCount u32, edgeReferenceCount u32, pairs ×{u16,u16},
++///      edge list ×u16, slot counts ×u32, then indices }
++///   3. cloud, if the leading u32 is non-zero: origin 3×i32, dimensions 3×i32,
++///      sparse block, active-block coordinates, three volume tables,
++///      sunOcclusionScale f32, two resolutions u32, then a proxy mesh
++///      (vertexCount ×16, indexCount ×u16)
++///   4. skirts: count u32; each { vertexCount u32, vertices ×40, indexCount u32,
++///      indices u16 }
++///   5. occluders: count u32; each { vertexCount u32, indexCount u32,
++///      vertices ×16, indices u16 }
++///
++/// The whole section must be consumed exactly; the editor refuses the file
++/// otherwise, so an over- or under-run here is a parse bug, not a warning.
++///
++/// Vertices keep the game's own layout, which the Metal vertex descriptor
++/// consumes unchanged:
++///
++///     +0  position float3     +12 normal snorm4      +16 materialIds u8×4
++///     +20 weights u8×4        +24 light0 u8×4        +28 light1 u8×4
++///     +32 light2 u8×4         +36 userData1 u8×4 (skirts only, stride 40)
++///
++/// The first 36 bytes of a skirt vertex are therefore identical to a terrain
++/// vertex, which is what lets the renderer flatten both into one buffer.
++struct LVL0Document {
++    static let magicValue = FormatUtil.asciiUInt32("LVL0")
++    static let acceptedVersions: Set<UInt32> = [51, 52]
++    static let vertexStride = 36
++    static let skirtStride = 40
++    static let occluderStride = 16
++    /// Bytes before the first section: magic + version + u8 count + 3 padding.
++    static let directoryStart = 12
++    /// The editor additionally requires every section to start past this.
++    static let sectionFloor = 132
++
++    struct Section: Equatable {
++        var tag: String
++        var offset: Int
++        var length: Int
++    }
++
++    enum Kind: String {
++        case terrain, cloud, skirt, occluder
++    }
++
++    struct Patch: Equatable {
++        var count: UInt32
++        var raw: UInt32
++    }
++
++    struct Terrain {
++        var linkedId: UInt32
++        var flags: UInt8
++        var boundsMin: SIMD3<Float>
++        var boundsMax: SIMD3<Float>
++        var indexCount: Int
++        var collisionBytes: Int
++        var gridMin: SIMD3<Float>
++        var gridMax: SIMD3<Float>
++        var cellSize: Float
++        var dimensions: SIMD3<UInt32>
++        var patches: [Patch]
++        var edgeCount: Int
++        var edgePairCount: Int
++        var edgeReferenceCount: Int
++        /// True when the indices were rebuilt through the edge table instead of
++        /// stored literally. No shipped map uses that path, so it is mirrored
++        /// from the editor and flagged rather than trusted.
++        var rebuiltFromEdgeTable: Bool
++        var recordOffset: Int
++    }
++
++    struct Mesh {
++        var kind: Kind
++        var ordinal: Int
++        /// Byte offset of this record inside the decompressed `LOD0`.
++        var recordOffset: Int
++        var vertexCount: Int
++        var stride: Int
++        /// Byte offset of the vertex stream inside the decompressed `LOD0`.
++        var vertexOffset: Int
++        var indices: [UInt32]
++        /// Present only for `.terrain`.
++        var terrain: Terrain?
++
++        var triangleCount: Int { indices.count / 3 }
++        var vertexByteCount: Int { vertexCount * stride }
++        var id: String { "\(kind.rawValue)\(ordinal)" }
++    }
++
++    struct BakeSubmesh {
++        var vertexCount: Int
++        var indexBytes: Int
++        var lightOffset: Int
++        var indexOffset: Int
++    }
++
++    struct Bake {
++        var name: String
++        var guid: UInt32
++        var isUniform: Bool
++        var submeshes: [BakeSubmesh]
++    }
++
++    let version: UInt32
++    let sections: [Section]
++    /// The decompressed `LOD0` payload every `vertexOffset` refers to.
++    let lod: Data
++    let meshes: [Mesh]
++    let bakes: [Bake]
++    let warnings: [String]
++
++    // MARK: - Parsing
++
++    init(data: Data) throws {
++        var reader = ByteReader(data)
++        guard try reader.u32() == Self.magicValue else {
++            throw ByteReadError.badMagic(expected: "LVL0",
++                                         got: reader.hex(at: 0, length: 4), offset: 0)
++        }
++        let version = try reader.u32()
++        guard Self.acceptedVersions.contains(version) else {
++            throw ByteReadError.invalid("LVL0 version \(version); this build reads 51 and 52")
++        }
++        self.version = version
++
++        let count = Int(try reader.u8())
++        try reader.skip(3)
++        guard count > 0, count <= 10 else {
++            throw ByteReadError.invalid("section count \(count) is outside the editor's 1…10")
++        }
++        guard data.count >= Self.directoryStart + count * 12 else {
++            throw ByteReadError.invalid("section directory truncated")
++        }
++
++        var warnings: [String] = []
++        var sections: [Section] = []
++        var seen = Set<String>()
++        for _ in 0..<count {
++            let tag = FormatUtil.fourCC(try reader.u32())
++            let offset = Int(try reader.u32())
++            let length = Int(try reader.u32())
++            guard offset >= Self.directoryStart + count * 12,
++                  length >= 0, offset + length <= data.count else {
++                throw ByteReadError.invalid("section '\(tag)' claims \(offset)+\(length) in a \(data.count)-byte file")
++            }
++            guard seen.insert(tag).inserted else {
++                throw ByteReadError.invalid("section '\(tag)' appears twice")
++            }
++            if offset < Self.sectionFloor {
++                warnings.append("段 \(tag) 起始于 \(offset)，编辑器要求 ≥ \(Self.sectionFloor)")
++            }
++            sections.append(Section(tag: tag, offset: offset, length: length))
++        }
++        self.sections = sections
++
++        guard let lod = sections.first(where: { $0.tag == "LOD0" }) else {
++            throw ByteReadError.invalid("no LOD0 section; found \(sections.map(\.tag).joined(separator: ", "))")
++        }
++        let compressed = data.subdata(in: lod.offset..<(lod.offset + lod.length))
++        let payload = try LZ4.decompress(compressed, limit: 1 << 28)
++        self.lod = payload
++
++        let parsed = try Self.parseLOD(payload)
++        self.meshes = parsed.meshes
++        self.bakes = parsed.bakes
++        self.warnings = warnings + parsed.warnings
++    }
++
++    private struct LODContent {
++        var meshes: [Mesh]
++        var bakes: [Bake]
++        var warnings: [String]
++    }
++
++    private static func parseLOD(_ lod: Data) throws -> LODContent {
++        var r = ByteReader(lod)
++        var warnings: [String] = []
++        var meshes: [Mesh] = []
++        var bakes: [Bake] = []
++
++        // 1 — baked meshes (props): read for byte accounting and UI, not drawn.
++        let bakeCount = try count(&r, limit: 100_000, name: "bake")
++        for _ in 0..<bakeCount {
++            let name = try r.lengthPrefixedString()
++            let guid = try r.u32()
++            let submeshCount = try count(&r, limit: 10_000, name: "bake submesh")
++            let uniform = try r.u8()
++            guard uniform <= 1 else {
++                throw ByteReadError.invalid("bake '\(name)' has uniform flag \(uniform)")
++            }
++            var submeshes: [BakeSubmesh] = []
++            submeshes.reserveCapacity(submeshCount)
++            for _ in 0..<submeshCount {
++                let vertexCount = try count(&r, limit: 2_000_000, name: "bake vertex")
++                let indexBytes = try count(&r, limit: 20_000_000, name: "bake index byte")
++                let lightLength = uniform == 1 ? 12 : vertexCount * 12
++                let lightOffset = r.pos
++                try r.skip(lightLength)
++                let indexOffset = r.pos
++                try r.skip(indexBytes)
++                submeshes.append(BakeSubmesh(vertexCount: vertexCount, indexBytes: indexBytes,
++                                             lightOffset: lightOffset, indexOffset: indexOffset))
++            }
++            bakes.append(Bake(name: name, guid: guid, isUniform: uniform == 1,
++                              submeshes: submeshes))
++        }
++
++        // 2 — terrain surfaces.
++        let terrainCount = try count(&r, limit: 100_000, name: "terrain")
++        for ordinal in 0..<terrainCount {
++            let recordOffset = r.pos
++            let linkedId = try r.u32()
++            let flags = try r.u8()
++            let boundsMin = try vec3(&r)
++            let boundsMax = try vec3(&r)
++            let vertexCount = try count(&r, limit: 65_536, name: "terrain vertex")
++            let indexCount = try count(&r, limit: 10_000_000, name: "terrain index")
++            guard indexCount % 3 == 0 else {
++                throw ByteReadError.invalid("terrain\(ordinal): \(indexCount) indices is not a triangle list")
++            }
++            let vertexOffset = r.pos
++            try r.skip(vertexCount * Self.vertexStride)
++
++            let collisionBytes = try count(&r, limit: 100_000_000, name: "terrain collision byte")
++            try r.skip(collisionBytes)
++
++            let gridMin = try vec3(&r)
++            let gridMax = try vec3(&r)
++            let cellSize = try r.f32()
++            let dimensions = SIMD3(try r.u32(), try r.u32(), try r.u32())
++
++            let patchCount = try count(&r, limit: 1_000_000, name: "terrain patch")
++            var patches: [Patch] = []
++            patches.reserveCapacity(patchCount)
++            for _ in 0..<patchCount {
++                patches.append(Patch(count: try r.u32(), raw: try r.u32()))
++            }
++
++            let edgeCount = try count(&r, limit: 1_000_000, name: "terrain edge slot")
++            let edgePairCount = try count(&r, limit: 5_000_000, name: "terrain edge pair")
++            let edgeReferenceCount = try count(&r, limit: 10_000_000, name: "terrain edge reference")
++
++            var pairs: [(UInt16, UInt16)] = []
++            pairs.reserveCapacity(edgePairCount)
++            for _ in 0..<edgePairCount {
++                pairs.append((try r.u16(), try r.u16()))
++            }
++            var edgeList: [UInt16] = []
++            edgeList.reserveCapacity(edgeReferenceCount)
++            for _ in 0..<edgeReferenceCount {
++                edgeList.append(try r.u16())
++            }
++            var slotCounts: [UInt32] = []
++            slotCounts.reserveCapacity(edgeCount)
++            for _ in 0..<edgeCount {
++                slotCounts.append(try r.u32())
++            }
++
++            var indices: [UInt32]
++            let rebuilt = edgePairCount != 0
++            if rebuilt {
++                // The editor rebuilds the index stream from the edge table: each
++                // entry names a slot-relative pair and which end of it to take.
++                // No shipped map exercises this, so it is mirrored exactly and
++                // reported as unverified.
++                let patchSum = patches.reduce(0) { $0 + Int($1.count) }
++                guard edgeReferenceCount == indexCount,
++                      edgeCount == patchCount,
++                      patchSum == edgeReferenceCount else {
++                    throw ByteReadError.invalid("terrain\(ordinal): edge table counts disagree (patches \(patchSum), refs \(edgeReferenceCount), indices \(indexCount), slots \(edgeCount)/\(patchCount))")
++                }
++                var built = [UInt32](repeating: 0, count: indexCount)
++                var slotBase = 0
++                var slotIndex = 0
++                var cursor = 0
++                for patch in patches {
++                    for _ in 0..<Int(patch.count) {
++                        let code = edgeList[cursor]
++                        let pairIndex = slotBase + Int(code >> 1)
++                        guard pairIndex < pairs.count else {
++                            throw ByteReadError.invalid("terrain\(ordinal): edge reference \(pairIndex) outside the \(pairs.count)-pair table")
++                        }
++                        let pair = pairs[pairIndex]
++                        let value = (code & 1) == 0 ? pair.0 : pair.1
++                        guard Int(value) < vertexCount else {
++                            throw ByteReadError.invalid("terrain\(ordinal): edge points at vertex \(value) of \(vertexCount)")
++                        }
++                        built[cursor] = UInt32(value)
++                        cursor += 1
++                    }
++                    if slotIndex < slotCounts.count {
++                        slotBase += Int(slotCounts[slotIndex])
++                        slotIndex += 1
++                    }
++                }
++                indices = built
++                warnings.append("地形\(ordinal) 通过边表重建索引（\(edgePairCount) 对 / \(edgeReferenceCount) 引用），出货样本中没有此路径")
++            } else {
++                indices = []
++                indices.reserveCapacity(indexCount)
++                for _ in 0..<indexCount {
++                    let value = try r.u16()
++                    guard Int(value) < vertexCount else {
++                        throw ByteReadError.invalid("terrain\(ordinal): index \(value) outside \(vertexCount) vertices")
++                    }
++                    indices.append(UInt32(value))
++                }
++            }
++
++            meshes.append(Mesh(
++                kind: .terrain, ordinal: ordinal, recordOffset: recordOffset,
++                vertexCount: vertexCount, stride: Self.vertexStride,
++                vertexOffset: vertexOffset, indices: indices,
++                terrain: Terrain(linkedId: linkedId, flags: flags,
++                                 boundsMin: boundsMin, boundsMax: boundsMax,
++                                 indexCount: indexCount, collisionBytes: collisionBytes,
++                                 gridMin: gridMin, gridMax: gridMax, cellSize: cellSize,
++                                 dimensions: dimensions, patches: patches,
++                                 edgeCount: edgeCount, edgePairCount: edgePairCount,
++                                 edgeReferenceCount: edgeReferenceCount,
++                                 rebuiltFromEdgeTable: rebuilt,
++                                 recordOffset: recordOffset)))
++        }
++
++        // 3 — cloud volume, present or not as a single flag.
++        let cloudFlag = try r.u32()
++        if cloudFlag != 0 {
++            _ = try r.i32(); _ = try r.i32(); _ = try r.i32() // origin
++            let dims = (Int(try r.i32()), Int(try r.i32()), Int(try r.i32()))
++            guard dims.0 >= 0, dims.1 >= 0, dims.2 >= 0,
++                  dims.0 <= 4096, dims.1 <= 4096, dims.2 <= 4096 else {
++                throw ByteReadError.invalid("cloud dimensions \(dims) are implausible")
++            }
++            try r.skip(dims.0 * dims.1 * dims.2)             // sparse block
++            let active = try count(&r, limit: 10_000_000, name: "cloud active block")
++            try r.skip(active * 6)                            // active block coordinates
++            for label in ["距离", "环境0", "环境1"] {
++                let size = try count(&r, limit: 100_000_000, name: "cloud \(label) table byte")
++                try r.skip(size)
++            }
++            _ = try r.f32()                                   // sun occlusion scale
++            _ = try r.u32(); _ = try r.u32()                  // two resolutions
++            let recordOffset = r.pos
++            let vertexCount = try count(&r, limit: 65_536, name: "cloud vertex")
++            let indexCount = try count(&r, limit: 10_000_000, name: "cloud index")
++            let vertexOffset = r.pos
++            try r.skip(vertexCount * Self.occluderStride)
++            var indices: [UInt32] = []
++            indices.reserveCapacity(indexCount)
++            for _ in 0..<indexCount {
++                let value = try r.u16()
++                guard Int(value) < vertexCount else {
++                    throw ByteReadError.invalid("cloud: index \(value) outside \(vertexCount) vertices")
++                }
++                indices.append(UInt32(value))
++            }
++            meshes.append(Mesh(kind: .cloud, ordinal: 0, recordOffset: recordOffset,
++                               vertexCount: vertexCount, stride: Self.occluderStride,
++                               vertexOffset: vertexOffset, indices: indices, terrain: nil))
++        }
++
++        // 4 — skirts. Stride 40: the same 36 bytes plus userData1 at +36.
++        let skirtCount = try count(&r, limit: 100_000, name: "skirt")
++        for ordinal in 0..<skirtCount {
++            let recordOffset = r.pos
++            let vertexCount = try count(&r, limit: 65_536, name: "skirt vertex")
++            let vertexOffset = r.pos
++            try r.skip(vertexCount * Self.skirtStride)
++            let indexCount = try count(&r, limit: 10_000_000, name: "skirt index")
++            guard indexCount % 3 == 0 else {
++                throw ByteReadError.invalid("skirt\(ordinal): \(indexCount) indices is not a triangle list")
++            }
++            var indices: [UInt32] = []
++            indices.reserveCapacity(indexCount)
++            for _ in 0..<indexCount {
++                let value = try r.u16()
++                guard Int(value) < vertexCount else {
++                    throw ByteReadError.invalid("skirt\(ordinal): index \(value) outside \(vertexCount) vertices")
++                }
++                indices.append(UInt32(value))
++            }
++            meshes.append(Mesh(kind: .skirt, ordinal: ordinal, recordOffset: recordOffset,
++                               vertexCount: vertexCount, stride: Self.skirtStride,
++                               vertexOffset: vertexOffset, indices: indices, terrain: nil))
++        }
++
++        // 5 — occluders (16-byte vertices; used for culling, not drawn).
++        let occluderCount = try count(&r, limit: 100_000, name: "occluder")
++        for ordinal in 0..<occluderCount {
++            let recordOffset = r.pos
++            let vertexCount = try count(&r, limit: 65_536, name: "occluder vertex")
++            let indexCount = try count(&r, limit: 10_000_000, name: "occluder index")
++            let vertexOffset = r.pos
++            try r.skip(vertexCount * Self.occluderStride)
++            var indices: [UInt32] = []
++            indices.reserveCapacity(indexCount)
++            for _ in 0..<indexCount {
++                let value = try r.u16()
++                guard Int(value) < vertexCount else {
++                    throw ByteReadError.invalid("occluder\(ordinal): index \(value) outside \(vertexCount) vertices")
++                }
++                indices.append(UInt32(value))
++            }
++            meshes.append(Mesh(kind: .occluder, ordinal: ordinal, recordOffset: recordOffset,
++                               vertexCount: vertexCount, stride: Self.occluderStride,
++                               vertexOffset: vertexOffset, indices: indices, terrain: nil))
++        }
++
++        guard r.pos == lod.count else {
++            throw ByteReadError.invalid("LOD0 has \(lod.count - r.pos) unread byte(s) after the last record; the record codec does not match")
++        }
++        return LODContent(meshes: meshes, bakes: bakes, warnings: warnings)
++    }
++
++    // MARK: - Access
++
++    func meshes(of kind: Kind) -> [Mesh] {
++        meshes.filter { $0.kind == kind }
++    }
++
++    func firstMesh(of kind: Kind) -> Mesh? {
++        meshes.first { $0.kind == kind }
++    }
++
++    /// Vertex bytes of one mesh, sliced out of the decompressed `LOD0`.
++    func vertexData(of mesh: Mesh) -> Data {
++        let start = mesh.vertexOffset
++        let end = start + mesh.vertexByteCount
++        guard start >= 0, end <= lod.count else { return Data() }
++        return lod.subdata(in: start..<end)
++    }
++
++    // MARK: - Helpers
++
++    private static func count(_ r: inout ByteReader, limit: Int, name: String) throws -> Int {
++        let start = r.pos
++        let value = Int(try r.u32())
++        guard value <= limit else {
++            throw ByteReadError.invalid("\(name) count \(value) exceeds \(limit) at \(start)")
++        }
++        return value
++    }
++
++    private static func vec3(_ r: inout ByteReader) throws -> SIMD3<Float> {
++        SIMD3(try r.f32(), try r.f32(), try r.f32())
++    }
++
++    var summary: String {
++        var parts: [String] = []
++        parts.append("LVL0 v\(version) — \(sections.count) 段 (\(sections.map(\.tag).joined(separator: "/"))), "
++                     + "\(meshes.count) 几何, \(bakes.count) 烘焙")
++        for mesh in meshes where mesh.kind != .occluder {
++            parts.append("  \(mesh.id): \(mesh.vertexCount) 顶点 / \(mesh.triangleCount) 三角形, stride \(mesh.stride)")
++        }
++        let occluders = meshes(of: .occluder)
++        if !occluders.isEmpty {
++            parts.append("  occluder ×\(occluders.count): "
++                         + "\(occluders.reduce(0) { $0 + $1.vertexCount }) 顶点")
++        }
++        return parts.joined(separator: "\n")
++    }
++}
+diff --git a/ios/Sources/LZ4.swift b/ios/Sources/LZ4.swift
+new file mode 100644
+index 0000000..9d6a7cd
+--- /dev/null
++++ b/ios/Sources/LZ4.swift
+@@ -0,0 +1,223 @@
++import Foundation
++
++/// LZ4 block-format codec, pure Swift.
++///
++/// The original LVL0 segments are stored with LZ4 block compression (the
++/// Android build decompressed them with LZ4 before parsing the terrain). The
++/// editor must also be able to re-compress a segment after a geometry edit, so
++/// both directions live here; the decoder is the critical path at load time.
++///
++/// Reference: https://github.com/lz4/lz4/blob/dev/doc/lz4_Block_format.md
++enum LZ4Error: Error, CustomStringConvertible {
++    case truncated(String)
++    case corrupt(String)
++
++    var description: String {
++        switch self {
++        case let .truncated(where_): return "LZ4 stream truncated: \(where_)"
++        case let .corrupt(where_): return "LZ4 stream corrupt: \(where_)"
++        }
++    }
++}
++
++enum LZ4 {
++    /// Decompresses a block whose uncompressed length is not recorded — this is
++    /// how `BstBaked.meshes` stores its `LOD0` section: a bare LZ4 block with no
++    /// size prefix. `limit` bounds the output so a hostile block cannot exhaust
++    /// memory.
++    static func decompress(_ input: Data, limit: Int = 256 << 20) throws -> Data {
++        let out = try decode(input, limit: limit)
++        guard out.count <= limit else {
++            throw LZ4Error.corrupt("decoded \(out.count) bytes, limit was \(limit)")
++        }
++        return out
++    }
++
++    /// Decompresses a block when the exact uncompressed size is known.
++    static func decompress(_ input: Data, expectedSize: Int) throws -> Data {
++        guard expectedSize >= 0 else { throw LZ4Error.corrupt("negative expected size") }
++        let out = try decode(input, limit: expectedSize)
++        guard out.count == expectedSize else {
++            throw LZ4Error.corrupt("decoded \(out.count) bytes, expected \(expectedSize)")
++        }
++        return out
++    }
++
++    private static func decode(_ input: Data, limit: Int) throws -> Data {
++        var out = [UInt8]()
++        out.reserveCapacity(min(limit, 1 << 20))
++
++        try input.withUnsafeBytes { (raw: UnsafeRawBufferPointer) throws in
++            guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
++                throw LZ4Error.truncated("empty input")
++            }
++            var i = 0
++            let n = raw.count
++
++            func readLength(baseLength: Int) throws -> Int {
++                var length = baseLength
++                if length == 15 {
++                    while true {
++                        guard i < n else { throw LZ4Error.truncated("length extension") }
++                        let b = base[i]; i += 1
++                        length += Int(b)
++                        if b != 255 { break }
++                    }
++                }
++                return length
++            }
++
++            while i < n {
++                let token = base[i]; i += 1
++                let literalLength = try readLength(baseLength: Int(token >> 4))
++                guard literalLength <= n - i else {
++                    throw LZ4Error.truncated("literal run at \(i)")
++                }
++                out.append(contentsOf: UnsafeBufferPointer(start: base + i, count: literalLength))
++                i += literalLength
++
++                // A block ends right after the literals of the final sequence.
++                if i >= n { break }
++
++                guard i + 2 <= n else { throw LZ4Error.truncated("match offset") }
++                let offset = Int(base[i]) | (Int(base[i + 1]) << 8)
++                i += 2
++                guard offset > 0, offset <= out.count else {
++                    throw LZ4Error.corrupt("match offset \(offset) at output \(out.count)")
++                }
++                let matchLength = try readLength(baseLength: Int(token & 0x0F)) + 4
++                var src = out.count - offset
++                guard matchLength <= limit - out.count else {
++                    throw LZ4Error.corrupt("match overruns the \(limit)-byte limit")
++                }
++                for _ in 0..<matchLength {
++                    out.append(out[src])
++                    src += 1
++                }
++            }
++        }
++
++        return Data(out)
++    }
++
++    /// Compresses `input` into a valid LZ4 block. Greedy matching with a small
++    /// hash table; deterministic and adequate for the segment sizes involved.
++    static func compress(_ input: Data) -> Data {
++        guard !input.isEmpty else { return Data() }
++        let bytes = [UInt8](input)
++        let n = bytes.count
++
++        if n < 13 {
++            return literalBlock(bytes)
++        }
++
++        var out = [UInt8]()
++        out.reserveCapacity(n / 2 + 16)
++
++        let hashBits = 16
++        let hashSize = 1 << hashBits
++        var table = [Int](repeating: 0, count: hashSize)
++        table.withUnsafeMutableBufferPointer { buffer in
++            for i in buffer.indices { buffer[i] = -1 }
++        }
++
++        func hash(_ p: Int) -> Int {
++            let v = UInt32(bytes[p]) | (UInt32(bytes[p + 1]) << 8)
++                | (UInt32(bytes[p + 2]) << 16) | (UInt32(bytes[p + 3]) << 24)
++            return Int((v &* 2654435761) >> (32 - hashBits))
++        }
++
++        var anchor = 0
++        var i = 0
++        let matchLimit = n - 12 // last match must start at least 12 bytes before the end
++
++        while i < matchLimit {
++            let h = hash(i)
++            let candidate = table[h]
++            table[h] = i
++
++            if candidate < 0 || i - candidate > 65535
++                || bytes[candidate] != bytes[i]
++                || bytes[candidate + 1] != bytes[i + 1]
++                || bytes[candidate + 2] != bytes[i + 2]
++                || bytes[candidate + 3] != bytes[i + 3] {
++                i += 1
++                continue
++            }
++
++            // Extend the match.
++            var matchLength = 4
++            while i + matchLength < n && bytes[candidate + matchLength] == bytes[i + matchLength] {
++                matchLength += 1
++            }
++            // The 5 trailing bytes must remain literals.
++            if i + matchLength > n - 5 {
++                matchLength = n - 5 - i
++                if matchLength < 4 {
++                    i += 1
++                    continue
++                }
++            }
++
++            let literalLength = i - anchor
++            let offset = i - candidate
++            emitSequence(literalLength: literalLength, matchLength: matchLength - 4,
++                         offset: offset, anchor: anchor, i: i, out: &out, bytes: bytes)
++
++            // Insert hashes for the matched region.
++            let matchEnd = i + matchLength
++            var q = i + 1
++            while q < matchEnd && q < matchLimit {
++                table[hash(q)] = q
++                q += 1
++            }
++            i = matchEnd
++            anchor = i
++        }
++
++        let tail = n - anchor
++        if tail > 0 {
++            // Final literal run, with a zero match length token.
++            out.append(UInt8(min(tail, 15) << 4))
++            if tail >= 15 {
++                var remaining = tail - 15
++                while remaining >= 255 { out.append(255); remaining -= 255 }
++                out.append(UInt8(remaining))
++            }
++            out.append(contentsOf: bytes[anchor..<n])
++        }
++        return Data(out)
++    }
++
++    private static func literalBlock(_ bytes: [UInt8]) -> Data {
++        var out = [UInt8]()
++        out.append(UInt8(min(bytes.count, 15) << 4))
++        if bytes.count >= 15 {
++            var remaining = bytes.count - 15
++            while remaining >= 255 { out.append(255); remaining -= 255 }
++            out.append(UInt8(remaining))
++        }
++        out.append(contentsOf: bytes)
++        return Data(out)
++    }
++
++    private static func emitSequence(literalLength: Int, matchLength: Int, offset: Int,
++                                     anchor: Int, i: Int, out: inout [UInt8], bytes: [UInt8]) {
++        let tokenHigh = UInt8(min(literalLength, 15) << 4)
++        let tokenLow = UInt8(min(matchLength, 15))
++        out.append(tokenHigh | tokenLow)
++        if literalLength >= 15 {
++            var remaining = literalLength - 15
++            while remaining >= 255 { out.append(255); remaining -= 255 }
++            out.append(UInt8(remaining))
++        }
++        out.append(contentsOf: bytes[anchor..<i])
++        out.append(UInt8(offset & 0xFF))
++        out.append(UInt8((offset >> 8) & 0xFF))
++        if matchLength >= 15 {
++            var remaining = matchLength - 15
++            while remaining >= 255 { out.append(255); remaining -= 255 }
++            out.append(UInt8(remaining))
++        }
++    }
++}
+diff --git a/ios/Sources/MetalRenderer.swift b/ios/Sources/MetalRenderer.swift
+index 926f6cb..8bef474 100644
+--- a/ios/Sources/MetalRenderer.swift
++++ b/ios/Sources/MetalRenderer.swift
+@@ -323,6 +323,9 @@ final class MetalRenderer {
+     private var colData = [Float](repeating: 0, count: 2048 * 4)
+ 
+     private(set) var levelName: String = ""
++    /// 资源根目录：这张图由游戏原始 Data 生成过就在 Documents/Assets，否则在 App 包里。
++    /// `init` 里按关卡名定一次，`assetsURL()` / `tex()` / 地形通道都用它。
++    private var assetsRoot: URL?
+     private var man: Manifest?
+     private var vbuf: MTLBuffer?
+     // LevelMesh 实例打包出来的道具网格（SkyEngine/tools/pack_objects）
+@@ -384,6 +387,7 @@ final class MetalRenderer {
+ 
+     init?(level: String) {
+         Boot.log("renderer init start level=\(level)")
++        assetsRoot = GameAssets.root(forLevel: level)
+         guard let dev = MTLCreateSystemDefaultDevice(), let q = dev.makeCommandQueue() else {
+             Boot.log("Metal device 不可用"); return nil
+         }
+@@ -557,7 +561,7 @@ final class MetalRenderer {
+     }
+ 
+     func assetsURL() -> URL? {
+-        Bundle.main.url(forResource: "Assets", withExtension: nil)
++        assetsRoot
+     }
+ 
+     func load(level: String) {
+@@ -783,7 +787,7 @@ final class MetalRenderer {
+ 
+     /// 导出当前关卡的整关几何（web 版「导出 bin」）
+     func exportGeo() -> URL? {
+-        guard let src = Bundle.main.url(forResource: levelName, withExtension: "geo.bin", subdirectory: "Assets") else { return nil }
++        guard let src = GameAssets.url("\(levelName).geo.bin") else { return nil }
+         let dst = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+             .appendingPathComponent("\(levelName)-editor.geo.bin")
+         try? FileManager.default.removeItem(at: dst)
+diff --git a/ios/Sources/TGCL.swift b/ios/Sources/TGCL.swift
+new file mode 100644
+index 0000000..bcde60f
+--- /dev/null
++++ b/ios/Sources/TGCL.swift
+@@ -0,0 +1,531 @@
++import Foundation
++
++/// Reader / editor for `Objects.level.bin` (magic "TGCL").
++///
++/// Nothing here is inferred any more. The editor ships its own TGCL reader in
++/// `assets/runtime/server.cjs` (package `com.sky.editor`, 0.3.1-android-preview),
++/// and this file mirrors it byte for byte. It was checked against all 33 real
++/// `Objects.level.bin` files in that build: every one parses and lands exactly
++/// on the declared file length.
++///
++/// Header — 44 bytes, magic + 10 × u32:
++///
++///     0  magic "TGCL"
++///     4  version            == 1
++///     8  classCount
++///     12 fieldCount
++///     16 nodeCount
++///     20 reserved (the editor ignores it)
++///     24 classTableOffset  (>= 44)
++///     28 fieldTableOffset  (the class table comes first)
++///     32 namePoolOffset
++///     36 nodeAreaOffset
++///     40 fileLength        == size of the file
++///
++/// Tables:
++///
++///     classes : classCount × 12 → { nameOffset, firstField, fieldCount }
++///     fields  : fieldCount × 16 → { type, nameOffset, size, classIndex }
++///     names   : NUL-terminated strings; `nameOffset` is a BYTE offset into the
++///               pool, not an index into a string list. (An earlier revision of
++///               this file treated it as an index and read the wrong names.)
++///     nodes   : { classIndex u32, name cstr, then the class's fields in order }
++///
++/// Field types are only 0…3:
++///
++///     0 raw(size)   1 string   2 reference(u32)   3 array
++///
++/// An array is a u32 count followed by `count` entries. When the field's
++/// `classIndex` is `0xFFFFFFFF` an entry is a u32 reference; otherwise an entry
++/// is a nested struct of class `classIndex`, read with that class's field list.
++///
++/// Editing never re-serialises the file: a patch replaces the bytes of one
++/// field in place and rewrites the length word at +40, so classes and fields
++/// this code does not understand survive untouched. A patch must keep the same
++/// byte length, because every internal offset in the file is absolute.
++struct TGCLDocument {
++    static let magicValue = FormatUtil.asciiUInt32("TGCL")
++    /// `classIndex` that marks an array of object references.
++    static let arrayReferenceMarker: UInt32 = 0xFFFF_FFFF
++    static let headerSize = 44
++    /// Offset of the total-length word, needed by every patch.
++    static let lengthWordOffset = 40
++    /// Guards against a self-referential class graph.
++    static let maxClassDepth = 64
++
++    enum FieldType: UInt32 {
++        case raw = 0
++        case string = 1
++        case reference = 2
++        case array = 3
++    }
++
++    struct Header: Equatable {
++        var version: UInt32
++        var classCount: UInt32
++        var fieldCount: UInt32
++        var nodeCount: UInt32
++        var reserved: UInt32
++        var classTableOffset: UInt32
++        var fieldTableOffset: UInt32
++        var namePoolOffset: UInt32
++        var nodeAreaOffset: UInt32
++        var fileLength: UInt32
++    }
++
++    struct ClassDef: Equatable {
++        var name: String
++        var firstField: UInt32
++        var fieldCount: UInt32
++    }
++
++    struct FieldDef: Equatable {
++        var index: Int
++        var name: String
++        var type: FieldType
++        var size: UInt32
++        var classIndex: UInt32
++    }
++
++    /// A decoded field value. `raw` widths map to exactly the shapes the editor
++    /// presents: 1→u8, 2→u16, 4→bits32, 8→bits64 (shown as hex), 12/16→a 3/4
++    /// float vector, 64→matrix4, anything else→opaque bytes.
++    enum Value {
++        case u8(UInt8)
++        case u16(UInt16)
++        case bits32(UInt32)
++        case bits64(UInt64)
++        case vector([Float])
++        case matrix([Float])
++        case bytes(Data)
++        case string(String)
++        case reference(UInt32)
++        case array([Field])
++        case structure([Field])
++
++        var floats: [Float] {
++            switch self {
++            case let .vector(v), let .matrix(v): return v
++            case let .bits32(b): return [Float(bitPattern: b)]
++            case let .u8(b): return [Float(b)]
++            case let .u16(b): return [Float(b)]
++            case .bits64, .bytes, .string, .reference, .array, .structure: return []
++            }
++        }
++
++        var isNumeric: Bool {
++            switch self {
++            case .u8, .u16, .bits32, .vector, .matrix: return true
++            case .bits64, .bytes, .string, .reference, .array, .structure: return false
++            }
++        }
++
++        var stringValue: String? {
++            if case let .string(s) = self { return s }
++            return nil
++        }
++
++        var referenceValue: UInt32? {
++            if case let .reference(r) = self { return r }
++            return nil
++        }
++
++        var arrayElements: [Field]? {
++            if case let .array(items) = self { return items }
++            return nil
++        }
++
++        var structureMembers: [Field]? {
++            if case let .structure(members) = self { return members }
++            return nil
++        }
++    }
++
++    struct Field {
++        var name: String
++        /// Byte range inside the file; a patch replaces exactly this.
++        var offset: Int
++        var length: Int
++        var value: Value
++        var raw: Data
++
++        var floats: [Float] { value.floats }
++        var isNumeric: Bool { value.isNumeric }
++        var arrayCount: Int? { value.arrayElements?.count }
++        var reference: UInt32? { value.referenceValue }
++        var string: String? { value.stringValue }
++
++        /// This field and everything below it, depth first. Array elements and
++        /// nested struct members are included, so a caller can look a name up
++        /// without knowing where in the class graph it sits.
++        func flattened(depth: Int = 0) -> [Field] {
++            guard depth < TGCLDocument.maxClassDepth else { return [self] }
++            var out: [Field] = [self]
++            let kids = value.arrayElements ?? value.structureMembers ?? []
++            for kid in kids {
++                out.append(contentsOf: kid.flattened(depth: depth + 1))
++            }
++            return out
++        }
++    }
++
++    struct Node {
++        var className: String
++        var name: String
++        var classIndex: UInt32
++        var recordOffset: Int
++        var length: Int
++        var fields: [Field]
++
++        /// Flattened field list, nested structures included.
++        func allFields() -> [Field] {
++            fields.flatMap { $0.flattened() }
++        }
++    }
++
++    private(set) var raw: Data
++    let header: Header
++    let classes: [ClassDef]
++    let fields: [FieldDef]
++    let nodes: [Node]
++
++    // MARK: - Parsing
++
++    init(data: Data) throws {
++        raw = data
++        var reader = ByteReader(data)
++
++        guard try reader.u32() == Self.magicValue else {
++            throw ByteReadError.badMagic(expected: "TGCL",
++                                         got: reader.hex(at: 0, length: 4),
++                                         offset: 0)
++        }
++
++        let version = try reader.u32()
++        let classCount = try reader.u32()
++        let fieldCount = try reader.u32()
++        let nodeCount = try reader.u32()
++        let reserved = try reader.u32()
++        let classTableOffset = try reader.u32()
++        let fieldTableOffset = try reader.u32()
++        let namePoolOffset = try reader.u32()
++        let nodeAreaOffset = try reader.u32()
++        let fileLength = try reader.u32()
++
++        let header = Header(version: version, classCount: classCount,
++                            fieldCount: fieldCount, nodeCount: nodeCount,
++                            reserved: reserved,
++                            classTableOffset: classTableOffset,
++                            fieldTableOffset: fieldTableOffset,
++                            namePoolOffset: namePoolOffset,
++                            nodeAreaOffset: nodeAreaOffset,
++                            fileLength: fileLength)
++        try Self.validate(header, fileLength: data.count)
++        self.header = header
++
++        let pool = data.subdata(in: Int(header.namePoolOffset)..<Int(header.nodeAreaOffset))
++
++        // Field table first: the class table is validated against its length.
++        var fieldDefs: [FieldDef] = []
++        fieldDefs.reserveCapacity(Int(header.fieldCount))
++        try reader.seek(to: Int(header.fieldTableOffset))
++        for index in 0..<Int(header.fieldCount) {
++            let typeRaw = try reader.u32()
++            guard let type = FieldType(rawValue: typeRaw) else {
++                throw ByteReadError.invalid("field \(index) uses type \(typeRaw); the format only defines 0…3")
++            }
++            let nameOffset = try reader.u32()
++            let size = try reader.u32()
++            let classIndex = try reader.u32()
++            fieldDefs.append(FieldDef(index: index,
++                                      name: try Self.name(at: nameOffset, pool: pool),
++                                      type: type, size: size, classIndex: classIndex))
++        }
++        self.fields = fieldDefs
++
++        var classDefs: [ClassDef] = []
++        classDefs.reserveCapacity(Int(header.classCount))
++        try reader.seek(to: Int(header.classTableOffset))
++        for _ in 0..<Int(header.classCount) {
++            let nameOffset = try reader.u32()
++            let firstField = try reader.u32()
++            let count = try reader.u32()
++            guard Int(firstField) + Int(count) <= fieldDefs.count else {
++                throw ByteReadError.invalid("class field range \(firstField)+\(count) runs past the \(fieldDefs.count)-entry field table")
++            }
++            classDefs.append(ClassDef(name: try Self.name(at: nameOffset, pool: pool),
++                                      firstField: firstField, fieldCount: count))
++        }
++        self.classes = classDefs
++
++        var nodeList: [Node] = []
++        nodeList.reserveCapacity(Int(header.nodeCount))
++        try reader.seek(to: Int(header.nodeAreaOffset))
++        for _ in 0..<Int(header.nodeCount) {
++            let start = reader.pos
++            let classIndex = try reader.u32()
++            guard Int(classIndex) < classDefs.count else {
++                throw ByteReadError.invalid("node at \(start) names class \(classIndex), but only \(classDefs.count) classes exist")
++            }
++            let name = try reader.cString()
++            let members = try Self.readFields(&reader, classes: classDefs, fields: fieldDefs,
++                                              classIndex: classIndex, depth: 0)
++            nodeList.append(Node(className: classDefs[Int(classIndex)].name,
++                                 name: name, classIndex: classIndex,
++                                 recordOffset: start, length: reader.pos - start,
++                                 fields: members))
++        }
++        self.nodes = nodeList
++
++        // The editor rejects a file that does not end exactly on its declared
++        // length, so a mismatch here means the field codec is wrong. Fail loudly
++        // instead of showing half a map.
++        guard reader.pos == Int(header.fileLength) else {
++            throw ByteReadError.invalid("node area ended at \(reader.pos) but the header declares \(header.fileLength) bytes")
++        }
++    }
++
++    private static func validate(_ h: Header, fileLength: Int) throws {
++        guard h.version == 1 else {
++            throw ByteReadError.invalid("TGCL version \(h.version); only version 1 exists")
++        }
++        guard Int(h.fileLength) == fileLength else {
++            throw ByteReadError.invalid("header file length \(h.fileLength) does not match the \(fileLength)-byte file")
++        }
++        guard h.classCount <= 10_000 else {
++            throw ByteReadError.invalid("\(h.classCount) classes is beyond the editor's limit of 10000")
++        }
++        guard h.fieldCount <= 100_000 else {
++            throw ByteReadError.invalid("\(h.fieldCount) fields is beyond the editor's limit of 100000")
++        }
++        guard h.nodeCount <= 1_000_000 else {
++            throw ByteReadError.invalid("\(h.nodeCount) nodes is beyond the editor's limit of 1000000")
++        }
++        let classStart = Int(h.classTableOffset)
++        let fieldStart = Int(h.fieldTableOffset)
++        let namesStart = Int(h.namePoolOffset)
++        let nodesStart = Int(h.nodeAreaOffset)
++        guard classStart >= headerSize,
++              classStart + Int(h.classCount) * 12 <= fieldStart,
++              fieldStart + Int(h.fieldCount) * 16 <= namesStart,
++              namesStart <= nodesStart,
++              nodesStart <= fileLength else {
++            throw ByteReadError.invalid("table offsets are inconsistent (class \(classStart), field \(fieldStart), names \(namesStart), nodes \(nodesStart), length \(fileLength))")
++        }
++    }
++
++    private static func name(at offset: UInt32, pool: Data) throws -> String {
++        let start = Int(offset)
++        guard start < pool.count else {
++            throw ByteReadError.invalid("name offset \(offset) is outside the \(pool.count)-byte name pool")
++        }
++        var end = start
++        while end < pool.count, pool[pool.startIndex + end] != 0 { end += 1 }
++        guard end < pool.count else {
++            throw ByteReadError.invalid("name at pool offset \(offset) is not NUL-terminated")
++        }
++        return String(decoding: pool[(pool.startIndex + start)..<(pool.startIndex + end)], as: UTF8.self)
++    }
++
++    /// Reads one class's fields, recursing into nested structs and array entries.
++    private static func readFields(_ reader: inout ByteReader,
++                                   classes: [ClassDef],
++                                   fields: [FieldDef],
++                                   classIndex: UInt32,
++                                   depth: Int) throws -> [Field] {
++        guard depth <= maxClassDepth else {
++            throw ByteReadError.invalid("class nesting deeper than \(maxClassDepth) at \(reader.pos)")
++        }
++        guard Int(classIndex) < classes.count else {
++            throw ByteReadError.invalid("reference to class \(classIndex), which does not exist")
++        }
++        let cls = classes[Int(classIndex)]
++        let first = Int(cls.firstField)
++        guard first <= fields.count, first + Int(cls.fieldCount) <= fields.count else {
++            throw ByteReadError.invalid("class \(cls.name) declares fields \(first)…\(first + Int(cls.fieldCount)) of \(fields.count)")
++        }
++
++        var out: [Field] = []
++        out.reserveCapacity(Int(cls.fieldCount))
++        for k in 0..<Int(cls.fieldCount) {
++            let def = fields[first + k]
++            let start = reader.pos
++            let value: Value
++            switch def.type {
++            case .raw:
++                let size = Int(def.size)
++                value = Self.classify(try reader.bytes(size))
++            case .string:
++                value = .string(try reader.cString())
++            case .reference:
++                value = .reference(try reader.u32())
++            case .array:
++                let count = Int(try reader.u32())
++                guard count <= 2_000_000 else {
++                    throw ByteReadError.invalid("array \(def.name) claims \(count) entries at \(start)")
++                }
++                var items: [Field] = []
++                items.reserveCapacity(min(count, 4096))
++                for j in 0..<count {
++                    let elementStart = reader.pos
++                    if def.classIndex == arrayReferenceMarker {
++                        // An entry is a u32 object reference.
++                        let reference = try reader.u32()
++                        items.append(Field(name: "[\(j)]", offset: elementStart,
++                                           length: reader.pos - elementStart,
++                                           value: .reference(reference), raw: Data()))
++                    } else {
++                        // An entry is a nested struct of class `def.classIndex`.
++                        let members = try Self.readFields(&reader, classes: classes, fields: fields,
++                                                          classIndex: def.classIndex, depth: depth + 1)
++                        items.append(Field(name: "[\(j)]", offset: elementStart,
++                                           length: reader.pos - elementStart,
++                                           value: .structure(members), raw: Data()))
++                    }
++                }
++                value = .array(items)
++            }
++            let end = reader.pos
++            out.append(Field(name: def.name, offset: start, length: end - start,
++                             value: value, raw: reader.data.subdata(in: start..<end)))
++        }
++        return out
++    }
++
++    /// Maps a raw byte string to the value shape the editor displays.
++    private static func classify(_ bytes: Data) -> Value {
++        switch bytes.count {
++        case 1:
++            return .u8(bytes[bytes.startIndex])
++        case 2:
++            return .u16(decodeUInt16(bytes))
++        case 4:
++            return .bits32(decodeUInt32(bytes))
++        case 8:
++            return .bits64(decodeUInt64(bytes))
++        case 12, 16:
++            let floats = decodeFloats(bytes)
++            return floats.allSatisfy({ $0.isFinite }) ? .vector(floats) : .bytes(bytes)
++        case 64:
++            let floats = decodeFloats(bytes)
++            return floats.allSatisfy({ $0.isFinite }) ? .matrix(floats) : .bytes(bytes)
++        default:
++            return .bytes(bytes)
++        }
++    }
++
++    // MARK: - Little-endian decoding
++
++    static func decodeUInt16(_ d: Data) -> UInt16 {
++        guard d.count >= 2 else { return 0 }
++        return UInt16(d[d.startIndex]) | (UInt16(d[d.startIndex + 1]) << 8)
++    }
++
++    static func decodeUInt32(_ d: Data) -> UInt32 {
++        guard d.count >= 4 else { return 0 }
++        let b = d.startIndex
++        return UInt32(d[b]) | (UInt32(d[b + 1]) << 8)
++            | (UInt32(d[b + 2]) << 16) | (UInt32(d[b + 3]) << 24)
++    }
++
++    static func decodeUInt64(_ d: Data) -> UInt64 {
++        guard d.count >= 8 else { return 0 }
++        let lo = UInt64(decodeUInt32(d))
++        let hi = UInt64(decodeUInt32(d.dropFirst(4)))
++        return lo | (hi << 32)
++    }
++
++    static func decodeFloats(_ d: Data) -> [Float] {
++        var out: [Float] = []
++        out.reserveCapacity(d.count / 4)
++        var i = 0
++        while i + 4 <= d.count {
++            out.append(Float(bitPattern: decodeUInt32(d.dropFirst(i))))
++            i += 4
++        }
++        return out
++    }
++
++    // MARK: - Lookups
++
++    func nodes(ofClass className: String) -> [Node] {
++        nodes.filter { $0.className == className }
++    }
++
++    func field(named name: String, in node: Node) -> Field? {
++        node.allFields().first { $0.name == name }
++    }
++
++    // MARK: - Patching
++
++    /// Returns a copy of the file with `replacement` written over the byte range
++    /// of one field, then re-parses it to prove the result is still valid.
++    ///
++    /// The replacement must be the same length: every offset inside a TGCL file
++    /// is absolute, so a resize would invalidate the class/field/node tables.
++    func patched(offset: Int, length: Int, replacement: Data) throws -> TGCLDocument {
++        guard offset >= 0, length >= 0, offset + length <= raw.count else {
++            throw ByteReadError.outOfBounds(offset: offset, need: length, have: raw.count - offset)
++        }
++        guard replacement.count == length else {
++            throw ByteReadError.invalid("a TGCL patch must keep its byte length (\(length)); got \(replacement.count). Resizing would break every absolute offset in the file.")
++        }
++
++        var out = Data()
++        out.reserveCapacity(raw.count)
++        out.append(raw.subdata(in: 0..<offset))
++        out.append(replacement)
++        out.append(raw.subdata(in: (offset + length)..<raw.count))
++
++        // Only the length word could ever differ; keep it exact anyway.
++        let newLength = UInt32(out.count)
++        out[Self.lengthWordOffset + 0] = UInt8(newLength & 0xFF)
++        out[Self.lengthWordOffset + 1] = UInt8((newLength >> 8) & 0xFF)
++        out[Self.lengthWordOffset + 2] = UInt8((newLength >> 16) & 0xFF)
++        out[Self.lengthWordOffset + 3] = UInt8((newLength >> 24) & 0xFF)
++
++        return try TGCLDocument(data: out)
++    }
++
++    /// Writes one float inside a vector/matrix field.
++    func settingFloat(of field: Field, at index: Int, to newValue: Float) throws -> TGCLDocument {
++        guard field.isNumeric, index >= 0, index * 4 + 4 <= field.length else {
++            throw ByteReadError.invalid("field \(field.name) is not a float vector of at least \(index + 1) components")
++        }
++        var replacement = field.raw
++        let bits = newValue.bitPattern
++        let at = replacement.startIndex + index * 4
++        replacement[at + 0] = UInt8(bits & 0xFF)
++        replacement[at + 1] = UInt8((bits >> 8) & 0xFF)
++        replacement[at + 2] = UInt8((bits >> 16) & 0xFF)
++        replacement[at + 3] = UInt8((bits >> 24) & 0xFF)
++        return try patched(offset: field.offset, length: field.length, replacement: replacement)
++    }
++
++    // MARK: - Diagnostics
++
++    func summary() -> String {
++        var lines: [String] = []
++        lines.append("TGCL v\(header.version) — \(nodes.count) 节点, \(classes.count) 类, \(fields.count) 字段")
++        for node in nodes.prefix(64) {
++            let described = node.fields.map { field -> String in
++                switch field.value {
++                case .array(let items): return "\(field.name):array[\(items.count)]"
++                case .string: return "\(field.name):string"
++                case .reference(let r): return "\(field.name):ref(\(r))"
++                case .u8: return "\(field.name):u8"
++                case .u16: return "\(field.name):u16"
++                case .bits32: return "\(field.name):bits32"
++                case .bits64: return "\(field.name):bits64"
++                case .vector(let v): return "\(field.name):vec\(v.count)"
++                case .matrix: return "\(field.name):matrix4"
++                case .bytes(let b): return "\(field.name):raw\(b.count)"
++                case .structure: return "\(field.name):struct"
++                }
++            }.joined(separator: ", ")
++            lines.append("  \(node.className) '\(node.name)' @\(node.recordOffset): \(described)")
++        }
++        if nodes.count > 64 { lines.append("  …") }
++        return lines.joined(separator: "\n")
++    }
++}
+diff --git a/ios/Sources/TerrainPass.swift b/ios/Sources/TerrainPass.swift
+index 7542f78..817c18d 100644
+--- a/ios/Sources/TerrainPass.swift
++++ b/ios/Sources/TerrainPass.swift
+@@ -132,7 +132,7 @@ final class TerrainPass {
+     init?(device: MTLDevice, level: String) {
+         self.device = device
+         self.level = level
+-        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else { return nil }
++        guard let root = GameAssets.root(forLevel: level) else { return nil }
+         guard let data = try? Data(contentsOf: root.appendingPathComponent(level + ".terrain.bin")),
+               data.count > 8 else { Boot.log("地形 bin 缺失"); return nil }
+         let vc = data.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) }

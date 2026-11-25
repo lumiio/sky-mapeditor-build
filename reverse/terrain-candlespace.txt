@@ -1,0 +1,12 @@
+              vertex_count: 30838
+               index_count: 210414
+                index_type: u32
+                 triangles: 70138
+                bounds_min: [-547.77, -3.77, -36.96]
+                bounds_max: [366.12, 391.03, 1614.58]
+    normal_snorm4_fraction: 1.0
+     material_id_histogram: {48: 1388, 16: 1227, 32: 1060, 80: 651, 28: 71, 35: 5, 17: 4}
+          weight_histogram: {255: 3155, 254: 66, 253: 36, 252: 29}
+               light0_mean: [229.9, 232.0, 229.4, 182.7]
+               light1_mean: [134.9, 190.4, 124.9, 185.9]
+               light2_mean: [124.5, 179.2, 164.5, 60.7]

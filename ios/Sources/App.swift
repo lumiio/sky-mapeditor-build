@@ -8,6 +8,23 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         Boot.log("didFinishLaunching")
+        // 有游戏原始 Data 时，把它就地转成引擎要的资源。放在后台跑：首次要复制 50MB 静态资源
+        // 并解析 33 张图，占住主线程会被启动看门狗杀掉。转完发通知，界面再把关卡并进列表。
+        if GameAssets.hasGameData() {
+            DispatchQueue.global(qos: .utility).async {
+                guard let report = GameAssets.buildIfNeeded() else { return }
+                Boot.log("原始数据就绪 \(report.summary) 用时 \(Int(report.seconds))s")
+                for failure in report.failed {
+                    Boot.log("生成失败 \(failure.name): \(failure.reason)")
+                }
+                for level in report.skipped {
+                    Boot.log("跳过（无 LVL0 地形）\(level)")
+                }
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .skyGameAssetsReady, object: nil)
+                }
+            }
+        }
         let vc = ViewerController()
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = vc
@@ -139,9 +156,11 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     private var cur = 0
     private var pendingPrevLog = ""
 
-    private let levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village",
+    private var levelIDs = ["CandleSpace", "Prairie_ButterflyFields", "Prairie_Village",
                             "Dawn_TrialsEarth", "Dawn_TrialsAir", "Night_JarCave", "AR_WheatField"]
-    private let levelNames = ["烛窟", "蝶原", "草原村", "土试炼", "风试炼", "罐洞", "麦田"]
+    private var levelNames = ["烛窟", "蝶原", "草原村", "土试炼", "风试炼", "罐洞", "麦田"]
+    /// 选关面板里那 4 列网格；关卡列表变化时整块重排。
+    private var levelChipStack: UIStackView?
 
     private let accent = UIColor(red: 0.31, green: 0.55, blue: 0.98, alpha: 1.0)
     private let cardBG = UIColor(white: 0.055, alpha: 0.98)
@@ -158,7 +177,66 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         if !prev.isEmpty && !prev.contains("first frame") {
             pendingPrevLog = prev.split(separator: "\n").suffix(2).map { String($0.prefix(60)) }.joined(separator: " ← ")
         }
+        NotificationCenter.default.addObserver(self, selector: #selector(onGameAssetsReady(_:)),
+                                               name: .skyGameAssetsReady, object: nil)
+        mergeGeneratedLevels()
         load(level: levelIDs[0], index: 0)
+    }
+
+    // MARK: - 原始数据关卡
+
+    /// 把 `Documents/Assets` 里生成好的关卡并进选关列表（同名不重复加）。
+    private func mergeGeneratedLevels() {
+        let generated = GameAssets.localLevels().filter { !levelIDs.contains($0) }
+        guard !generated.isEmpty else { return }
+        levelIDs.append(contentsOf: generated)
+        levelNames.append(contentsOf: generated.map { LevelNames.chinese($0) })
+        Boot.log("原始数据关卡 \(generated.count) 张已并入列表，当前 \(levelIDs.count) 张")
+        rebuildLevelChips()
+    }
+
+    @objc private func onGameAssetsReady(_ note: Notification) {
+        mergeGeneratedLevels()
+        hud?.text = "原始数据已就绪：" + GameAssets.localLevels().count.description + " 张可加载"
+    }
+
+    private func makeLevelRow() -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 6
+        return row
+    }
+
+    private func makeLevelChip(_ index: Int) -> UIButton {
+        let b = UIButton(type: .system)
+        b.setTitle(levelNames[index], for: .normal)
+        b.titleLabel?.font = .systemFont(ofSize: 11.5, weight: .medium)
+        b.layer.cornerRadius = 9
+        b.layer.cornerCurve = .continuous
+        b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+        b.tag = index
+        b.backgroundColor = index == cur ? accent : chipOff
+        b.setTitleColor(.white, for: .normal)
+        b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
+        b.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        return b
+    }
+
+    /// 选关面板按 4 列一排重排，行数随关卡数增长（放在滚动视图里）。
+    private func rebuildLevelChips() {
+        guard let grid = levelChipStack else { return }
+        for view in grid.arrangedSubviews { view.removeFromSuperview() }
+        var row = makeLevelRow()
+        for index in levelIDs.indices {
+            if row.arrangedSubviews.count == 4 {
+                row.addArrangedSubview(UIView())
+                grid.addArrangedSubview(row)
+                row = makeLevelRow()
+            }
+            row.addArrangedSubview(makeLevelChip(index))
+        }
+        row.addArrangedSubview(UIView())
+        grid.addArrangedSubview(row)
     }
 
     // MARK: - 3D 视图
@@ -566,7 +644,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     }
 
     private func shaderNames() -> [String] {
-        guard let u = Bundle.main.url(forResource: "\(levelIDs[cur]).materials", withExtension: "json"),
+        guard let u = GameAssets.url("\(levelIDs[cur]).materials.json"),
               let d = try? Data(contentsOf: u),
               let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return [] }
         var set = Set<String>()
@@ -575,7 +653,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
     }
 
     private func materialSummary() -> String {
-        guard let u = Bundle.main.url(forResource: "\(levelIDs[cur]).materials", withExtension: "json"),
+        guard let u = GameAssets.url("\(levelIDs[cur]).materials.json"),
               let d = try? Data(contentsOf: u),
               let arr = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return "材质 —" }
         let names = arr.compactMap { $0["shader"] as? String }
@@ -679,24 +757,26 @@ final class ViewerController: UIViewController, MTKViewDelegate {
         ])
         let title = UILabel(); title.text = "地图"; title.font = .systemFont(ofSize: 12, weight: .medium); title.textColor = dim
         stack.addArrangedSubview(title)
-        for rowIdx in 0..<2 {
-            let row = UIStackView(); row.axis = .horizontal; row.spacing = 6
-            for i in (rowIdx * 4)..<min(7, rowIdx * 4 + 4) {
-                let b = UIButton(type: .system)
-                b.setTitle(levelNames[i], for: .normal)
-                b.titleLabel?.font = .systemFont(ofSize: 11.5, weight: .medium)
-                b.layer.cornerRadius = 9; b.layer.cornerCurve = .continuous
-                b.contentEdgeInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
-                b.tag = i
-                b.backgroundColor = i == cur ? accent : chipOff
-                b.setTitleColor(.white, for: .normal)
-                b.addTarget(self, action: #selector(onLevelTap(_:)), for: .touchUpInside)
-                b.heightAnchor.constraint(equalToConstant: 30).isActive = true
-                row.addArrangedSubview(b)
-            }
-            row.addArrangedSubview(UIView())
-            stack.addArrangedSubview(row)
-        }
+        // 关卡多到 30 多张，固定两行放不下：改成可滚动的 4 列网格
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.showsVerticalScrollIndicator = true
+        scroll.heightAnchor.constraint(lessThanOrEqualToConstant: 208).isActive = true
+        let grid = UIStackView()
+        grid.axis = .vertical
+        grid.spacing = 6
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(grid)
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            grid.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            grid.topAnchor.constraint(equalTo: scroll.topAnchor),
+            grid.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
+            grid.widthAnchor.constraint(equalTo: scroll.widthAnchor),
+        ])
+        stack.addArrangedSubview(scroll)
+        levelChipStack = grid
+        rebuildLevelChips()
     }
 
     @objc private func showLevelSheet() {
@@ -853,7 +933,7 @@ final class ViewerController: UIViewController, MTKViewDelegate {
 
     private func load(level: String, index: Int) {
         if loading { return }
-        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else { hud.text = "Assets 缺失"; return }
+        guard let root = GameAssets.root(forLevel: level) else { hud.text = "Assets 缺失"; return }
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("\(level).terrain.bin").path) else {
             hud.text = "\(level) 无地形数据"
             return

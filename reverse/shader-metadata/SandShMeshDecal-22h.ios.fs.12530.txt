@@ -1,0 +1,1 @@
+fsmainair.fast_fmin.f32air.fast_clamp.f32air.fast_fmax.f32air.dot.v3f32air.read_texture_2d.v4f32air.mix.v3f32air.fast_rsqrt.f32air.clamp.s.i32air.convert.s.v4i32.f.v4f32air.convert.s.v2i32.f.v2f32air.fast_floor.v2f32air.fast_pow.f32air.fast_log2.f32air.fast_sqrt.f32air.sample_texture_2d.v4f3232023.864air64_v24-apple-ios15.0.0

@@ -1,0 +1,1 @@
+omnipotent charSimple C++ TBAAair-alias-scopes(vsmain)air-alias-scope-arg(5)air-alias-scope-samplersair-alias-scope-texturesair-alias-scope-arg(6)_ZTS17PerObjectUniforms_ZTSN5metal6matrixIfLi4ELi4EvEE_ZTS16PerFrameUniformsint

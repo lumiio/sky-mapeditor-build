@@ -132,7 +132,7 @@ final class TerrainPass {
     init?(device: MTLDevice, level: String) {
         self.device = device
         self.level = level
-        guard let root = Bundle.main.url(forResource: "Assets", withExtension: nil) else { return nil }
+        guard let root = GameAssets.root(forLevel: level) else { return nil }
         guard let data = try? Data(contentsOf: root.appendingPathComponent(level + ".terrain.bin")),
               data.count > 8 else { Boot.log("地形 bin 缺失"); return nil }
         let vc = data.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) }
