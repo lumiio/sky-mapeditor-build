@@ -188,6 +188,12 @@ struct WaterUniforms {
 struct SceneItem: Codable { let name: String; let type: String; let pos: [Float]; let order: Int?; let material: String? }
 struct SceneClass: Codable { let name: String; let count: Int; let items: [SceneItem] }
 
+struct GeoMatU {
+    var vp: simd_float4x4 = matrix_identity_float4x4
+    var color: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1)
+    var camFog: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)   // xyz=cam, w=fog
+    var misc: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)    // x=materialId
+}
 struct GeoU {
     var vp: simd_float4x4 = matrix_identity_float4x4
     var sunDir: SIMD4<Float> = SIMD4<Float>(0.3, 0.9, 0.2, 1)
@@ -266,6 +272,14 @@ final class MetalRenderer {
     private var geoIB: MTLBuffer?
     private var geoVC = 0
     private var geoIC = 0
+    // GEO0 36B 原流（BstBaked 整关，410 个材质子块）——编辑器 basic 用的就是这份
+    struct GeoMatRange { let start: Int; let count: Int; let material: Int }
+    private var geoMatVB: MTLBuffer?
+    private var geoMatIB: MTLBuffer?
+    private var geoMatRanges: [GeoMatRange] = []
+    private var geoMatIC = 0
+    private var geoMatPipe: MTLRenderPipelineState?
+    private var matColors: [Int: SIMD3<Float>] = [:]
     private var geoCenter = SIMD3<Float>(0, 0, 0)
     private var geoRadius: Float = 10
     /// 几何验证模式：先绕过原版材质/雾/后期，只用整关几何 + 三光，确认模型和机位是对的
@@ -610,6 +624,39 @@ final class MetalRenderer {
             }
         }
 
+        // GEO0 36B 原流 + 材质表：编辑器 basic 的正确数据源
+        geoMatVB = nil; geoMatIB = nil; geoMatRanges = []; geoMatIC = 0
+        if let td = try? Data(contentsOf: root.appendingPathComponent("\(level).terrain.bin")), td.count > 8 {
+            let vc = td.withUnsafeBytes { Int($0.load(fromByteOffset: 0, as: UInt32.self)) }
+            let ic = td.withUnsafeBytes { Int($0.load(fromByteOffset: 4, as: UInt32.self)) }
+            if vc > 0, ic > 0, td.count == 8 + vc * 36 + ic * 4 {
+                geoMatVB = td.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!.advanced(by: 8), length: vc * 36, options: .storageModeShared) }
+                geoMatIB = td.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!.advanced(by: 8 + vc * 36), length: ic * 4, options: .storageModeShared) }
+                geoMatIC = ic
+                if let md = try? Data(contentsOf: root.appendingPathComponent("\(level).terrain.meta.json")),
+                   let obj = try? JSONSerialization.jsonObject(with: md) as? [String: Any],
+                   let rs = obj["ranges"] as? [[String: Any]] {
+                    geoMatRanges = rs.compactMap { r in
+                        guard let st = r["start"] as? Int, let ct = r["count"] as? Int, let mt = r["material"] as? Int else { return nil }
+                        return GeoMatRange(start: st, count: ct, material: mt)
+                    }
+                }
+                Boot.log("GEO0 36B \(vc) 顶点 / \(ic) 索引 / \(geoMatRanges.count) 材质块")
+            } else {
+                Boot.log("terrain.bin 尺寸不符 \(td.count) 期望 \(8 + vc * 36 + ic * 4)")
+            }
+        }
+        // 材质表 u_matColor（APK materialInfo 原值，linear）
+        matColors = [:]
+        if let md = try? Data(contentsOf: root.appendingPathComponent("\(level).materials.json")),
+           let arr = try? JSONSerialization.jsonObject(with: md) as? [[String: Any]] {
+            for m in arr {
+                if let id = m["id"] as? Int, let c = m["color"] as? [Double], c.count >= 3 {
+                    matColors[id] = SIMD3<Float>(Float(c[0]), Float(c[1]), Float(c[2]))
+                }
+            }
+        }
+
         // 取景：三角形数加权落在最密的一簇
         let mm = m
         var wsum: Float = 0, acc = SIMD3<Float>(0, 0, 0)
@@ -936,6 +983,23 @@ final class MetalRenderer {
         }
         geoPipe = makePipe("geoVS", "geoFS", .rgba16Float)
         linePipe = makePipe("lineVS", "lineFS", .rgba16Float, blend: true)
+        // GEO0 36B：pos / snorm8 normal / uchar4 mat0 / uchar4 mat1 / uchar4 color
+        let mvd = MTLVertexDescriptor()
+        mvd.attributes[0].format = .float3; mvd.attributes[0].offset = 0;  mvd.attributes[0].bufferIndex = 0
+        mvd.attributes[1].format = .char4Normalized; mvd.attributes[1].offset = 12; mvd.attributes[1].bufferIndex = 0
+        mvd.attributes[2].format = .uchar4Normalized; mvd.attributes[2].offset = 16; mvd.attributes[2].bufferIndex = 0
+        mvd.attributes[3].format = .uchar4Normalized; mvd.attributes[3].offset = 20; mvd.attributes[3].bufferIndex = 0
+        mvd.attributes[4].format = .uchar4Normalized; mvd.attributes[4].offset = 24; mvd.attributes[4].bufferIndex = 0
+        mvd.layouts[0].stride = 36
+        mvd.layouts[0].stepFunction = .perVertex
+        mvd.layouts[0].stepRate = 1
+        if let vf = library.makeFunction(name: "geoMatVS"), let ff = library.makeFunction(name: "geoMatFS") {
+            let pd = MTLRenderPipelineDescriptor()
+            pd.vertexFunction = vf; pd.fragmentFunction = ff; pd.vertexDescriptor = mvd
+            pd.colorAttachments[0].pixelFormat = .rgba16Float
+            pd.depthAttachmentPixelFormat = .depth32Float
+            geoMatPipe = try? device.makeRenderPipelineState(descriptor: pd)
+        }
         geoBrightPipe = makePipe("geoQuadVS", "geoBrightFS", .rgba16Float)
         geoBlurPipe = makePipe("geoQuadVS", "geoBlurFS", .rgba16Float)
         geoCompositePipe = makePipe("geoQuadVS", "geoCompositeFS", .bgra8Unorm_srgb)
@@ -962,7 +1026,9 @@ final class MetalRenderer {
 
         let sea = man?.seaLevel ?? waterY
         let eyeBase = geoEyeBase ?? (sea + 1.7)
-        let eye = SIMD3<Float>(center.x + walkPos.x, eyeBase + eyeLift, center.z + walkPos.y)
+        // GEO0 空间 x 与 OBJ/geo.bin 相反：mode3 走 GEO0 36B 时取反
+        let eyeX = (geoRenderMode == 3 ? -center.x : center.x) + walkPos.x
+        let eye = SIMD3<Float>(eyeX, eyeBase + eyeLift, center.z + walkPos.y)
         let dir = SIMD3<Float>(cos(el) * cos(az), sin(el), cos(el) * sin(az))
         let proj = perspective(min(100, max(25, 55 * zoom)) * Float.pi / 180, Float(w) / Float(h), 0.08, 1500)
         let vm = lookAt(eye, eye + dir, SIMD3<Float>(0, 1, 0))
@@ -996,17 +1062,36 @@ final class MetalRenderer {
         rp.depthAttachment.clearDepth = 1.0
         rp.depthAttachment.storeAction = .dontCare
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { return }
-        enc.setRenderPipelineState(geoPipe)
         enc.setDepthStencilState(depthState)
         enc.setCullMode(.back)
-        enc.setVertexBuffer(geoVB, offset: 0, index: 0)
-        var uCopy = u
-        enc.setVertexBytes(&uCopy, length: MemoryLayout<GeoU>.stride, index: 1)
-        enc.setFragmentBytes(&uCopy, length: MemoryLayout<GeoU>.stride, index: 1)
-        if geoRenderMode == 2 {
-            enc.drawIndexedPrimitives(type: .point, indexCount: geoIC, indexType: .uint32, indexBuffer: geoIB, indexBufferOffset: 0)
+        if geoRenderMode == 3, let mp = geoMatPipe, let mv = geoMatVB, let mi = geoMatIB, !geoMatRanges.isEmpty {
+            // 编辑器 basic：一次 draw 一个材质子块，alpha 用 material id/weight 掩码
+            enc.setRenderPipelineState(mp)
+            enc.setVertexBuffer(mv, offset: 0, index: 0)
+            for r in geoMatRanges {
+                guard r.count > 0, r.start >= 0, r.start + r.count <= geoMatIC else { continue }
+                var mu = GeoMatU()
+                mu.vp = vp
+                // 编辑器 basic 的 u_color 默认白，tint 由逐顶点 a_color 提供
+                mu.color = SIMD4<Float>(1, 1, 1, 1)
+                mu.camFog = SIMD4<Float>(eye.x, eye.y, eye.z, fogDensity)
+                mu.misc = SIMD4<Float>(Float(r.material), 0, 0, 0)
+                enc.setVertexBytes(&mu, length: MemoryLayout<GeoMatU>.stride, index: 1)
+                enc.setFragmentBytes(&mu, length: MemoryLayout<GeoMatU>.stride, index: 1)
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: r.count, indexType: .uint32,
+                                          indexBuffer: mi, indexBufferOffset: r.start * 4)
+            }
         } else {
-            enc.drawIndexedPrimitives(type: .triangle, indexCount: geoIC, indexType: .uint32, indexBuffer: geoIB, indexBufferOffset: 0)
+            enc.setRenderPipelineState(geoPipe)
+            enc.setVertexBuffer(geoVB, offset: 0, index: 0)
+            var uCopy = u
+            enc.setVertexBytes(&uCopy, length: MemoryLayout<GeoU>.stride, index: 1)
+            enc.setFragmentBytes(&uCopy, length: MemoryLayout<GeoU>.stride, index: 1)
+            if geoRenderMode == 2 {
+                enc.drawIndexedPrimitives(type: .point, indexCount: geoIC, indexType: .uint32, indexBuffer: geoIB, indexBufferOffset: 0)
+            } else {
+                enc.drawIndexedPrimitives(type: .triangle, indexCount: geoIC, indexType: .uint32, indexBuffer: geoIB, indexBufferOffset: 0)
+            }
         }
         enc.setRenderPipelineState(linePipe)
         var vpCopy = vp

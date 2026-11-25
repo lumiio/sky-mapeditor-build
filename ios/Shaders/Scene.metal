@@ -6505,3 +6505,55 @@ fragment float4 geoCompositeFS(QOut in [[stage_in]], texture2d<float> scene [[te
     if (p.x > 0.0) { c += bloom.sample(smp, in.uv).rgb * p.x; }
     return float4(c, 1.0);
 }
+
+// ===== GEO0 36B 原流 + 编辑器 basic（APK server.cjs Hf() 逐行）=====
+struct GeoMatVIn {
+    float3 pos   [[attribute(0)]];
+    float4 nrm   [[attribute(1)]];   // snorm8x4 @12
+    float4 m0    [[attribute(2)]];   // uchar4 @16，material ids
+    float4 m1    [[attribute(3)]];   // uchar4 @20，material weights
+    float4 col   [[attribute(4)]];   // uchar4 normalized @24，a_color
+};
+struct GeoMatOut {
+    float4 pos [[position]];
+    float3 nrm;
+    float3 col;
+    float4 m0;
+    float4 m1;
+    float3 world;
+};
+struct GeoMatU {
+    float4x4 vp;
+    float4 color;    // u_color（linear）
+    float4 camFog;   // xyz=camPos, w=fogDensity
+    float4 misc;     // x=materialId
+};
+
+vertex GeoMatOut geoMatVS(GeoMatVIn in [[stage_in]], constant GeoMatU &u [[buffer(1)]]) {
+    GeoMatOut o;
+    o.pos = u.vp * float4(in.pos, 1.0);
+    o.nrm = in.nrm.xyz;
+    o.col = u.color.rgb * in.col.rgb;
+    o.m0 = in.m0;
+    o.m1 = in.m1;
+    o.world = in.pos;
+    return o;
+}
+
+fragment float4 geoMatFS(GeoMatOut in [[stage_in]], constant GeoMatU &u [[buffer(1)]]) {
+    // alpha = dot(equal(ivec4(a_material0*256), ivec4(materialId)), a_material1)
+    int mid = int(u.misc.x + 0.5);
+    float a = 0.0;
+    if (int(round(in.m0.x * 255.0)) == mid) a += in.m1.x;
+    if (int(round(in.m0.y * 255.0)) == mid) a += in.m1.y;
+    if (int(round(in.m0.z * 255.0)) == mid) a += in.m1.z;
+    if (int(round(in.m0.w * 255.0)) == mid) a += in.m1.w;
+    if (a <= 0.0) discard_fragment();
+    float3 n = normalize(in.nrm);
+    float lighting = 0.55 + 0.45 * abs(n.y) / max(length(in.nrm), 0.00001);
+    float3 c = in.col * lighting;
+    float dist = length(in.world - u.camFog.xyz);
+    float f = 1.0 - exp(-u.camFog.w * max(dist - 2.0, 0.0));
+    c = mix(c, float3(0.62, 0.72, 0.78), clamp(f, 0.0, 0.35));
+    return float4(c, 1.0);
+}
